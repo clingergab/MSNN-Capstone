@@ -1,0 +1,743 @@
+"""
+Gradient monitoring utilities for Linear Integration Neural Networks (LINet).
+
+This module provides lightweight gradient analysis tools for N-stream architectures
+to detect pathway collapse or gradient imbalance between streams.
+
+Usage:
+    monitor = GradientMonitor(model)
+    stats = monitor.compute_pathway_stats()  # Call after loss.backward()
+
+    # For training loop integration:
+    tracker = GradientHealthTracker(model)
+    # ... after loss.backward(), before optimizer.step():
+    tracker.step()
+    # ... at epoch end:
+    summary = tracker.get_epoch_summary()
+    tracker.reset_epoch()
+"""
+
+import re
+import numpy as np
+import torch
+import torch.nn as nn
+from typing import Optional
+from collections import defaultdict, deque
+
+# Optional matplotlib import for plotting
+try:
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
+
+class GradientMonitor:
+    """
+    Gradient monitoring for N-stream Linear Integration networks.
+
+    Tracks gradients for:
+    - Individual stream pathways (stream_0, stream_1, ..., streamN-1)
+    - Integrated pathway
+    - Shared parameters (classifier, etc.)
+    """
+
+    def __init__(self, model: nn.Module):
+        """
+        Initialize gradient monitor.
+
+        Args:
+            model: The LINet model to monitor
+        """
+        self.model = model
+        # Get num_streams directly from model if available, otherwise detect
+        self.num_streams = getattr(model, 'num_streams', self._detect_num_streams())
+
+    def _detect_num_streams(self) -> int:
+        """
+        Detect the number of streams in the model by examining parameter names.
+
+        Returns:
+            Number of streams detected
+        """
+        stream_indices = set()
+        for name, _ in self.model.named_parameters():
+            # Match patterns like .stream_weights.0 or .stream_weights.0.weight
+            match = re.search(r'\.stream_weights\.(\d+)(?:\.|$)', name)
+            if match:
+                stream_indices.add(int(match.group(1)))
+            # Match patterns like .integration_from_streams.0 or .integration_from_streams.0.weight
+            match = re.search(r'\.integration_from_streams\.(\d+)(?:\.|$)', name)
+            if match:
+                stream_indices.add(int(match.group(1)))
+
+        if stream_indices:
+            return max(stream_indices) + 1
+
+        # Fallback: assume 2 streams if no stream_weights pattern found
+        return 2
+
+    def _get_stream_index(self, param_name: str) -> Optional[int]:
+        """
+        Extract stream index from parameter name.
+
+        Args:
+            param_name: Name of the parameter
+
+        Returns:
+            Stream index if found, None otherwise
+        """
+        # Match patterns like .stream_weights.0 or .stream_weights.0.weight
+        match = re.search(r'\.stream_weights\.(\d+)(?:\.|$)', param_name)
+        if match:
+            return int(match.group(1))
+
+        # Match patterns like .stream_biases.0 or .stream_biases.0.weight
+        match = re.search(r'\.stream_biases\.(\d+)(?:\.|$)', param_name)
+        if match:
+            return int(match.group(1))
+
+        # Match patterns like .integration_from_streams.0 or .integration_from_streams.0.weight
+        match = re.search(r'\.integration_from_streams\.(\d+)(?:\.|$)', param_name)
+        if match:
+            return int(match.group(1))
+
+        return None
+
+    def compute_pathway_stats(self) -> dict[str, float]:
+        """
+        Compute gradient statistics for each pathway.
+
+        Call this AFTER loss.backward() to analyze gradient magnitudes.
+
+        Returns:
+            Dictionary with gradient statistics for all streams:
+            - stream{i}_grad_norm: L2 norm of stream{i} gradients for each stream
+            - integrated_grad_norm: L2 norm of integrated gradients
+            - shared_grad_norm: L2 norm of shared gradients
+            - stream{i}_to_stream0_ratio: Gradient ratio for each stream vs stream0
+            - stream{i}_to_integrated_ratio: Stream vs integrated balance
+            - stream{i}_mean: Mean gradient norm per parameter for each stream
+            - stream{i}_param_count: Number of parameters for each stream
+        """
+        # Initialize accumulators for each stream
+        stream_grad_norms = [0.0] * self.num_streams
+        stream_counts = [0] * self.num_streams
+        integrated_grad_norm = 0.0
+        shared_grad_norm = 0.0
+        integrated_count = 0
+        shared_count = 0
+
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                grad_norm_sq = param.grad.norm().item() ** 2
+
+                # Check if this is a stream-specific parameter
+                stream_idx = self._get_stream_index(name)
+                if stream_idx is not None and stream_idx < self.num_streams:
+                    stream_grad_norms[stream_idx] += grad_norm_sq
+                    stream_counts[stream_idx] += 1
+                elif 'integrated' in name:
+                    integrated_grad_norm += grad_norm_sq
+                    integrated_count += 1
+                else:
+                    # Shared parameters (fc, etc.)
+                    shared_grad_norm += grad_norm_sq
+                    shared_count += 1
+
+        # Compute L2 norms
+        stream_grad_norms = [norm ** 0.5 for norm in stream_grad_norms]
+        integrated_grad_norm = integrated_grad_norm ** 0.5
+        shared_grad_norm = shared_grad_norm ** 0.5
+
+        # Build result dictionary
+        result = {
+            'integrated_grad_norm': integrated_grad_norm,
+            'shared_grad_norm': shared_grad_norm,
+            'integrated_mean': integrated_grad_norm / max(integrated_count, 1),
+            'integrated_param_count': integrated_count,
+            'shared_param_count': shared_count,
+        }
+
+        # Add per-stream statistics
+        eps = 1e-8
+        for i in range(self.num_streams):
+            result[f'stream_{i}_grad_norm'] = stream_grad_norms[i]
+            result[f'stream_{i}_mean'] = stream_grad_norms[i] / max(stream_counts[i], 1)
+            result[f'stream_{i}_param_count'] = stream_counts[i]
+
+        # Compute ratios (compare each stream to stream0 and integrated)
+        for i in range(self.num_streams):
+            if i > 0:
+                result[f'stream_{i}_to_stream0_ratio'] = stream_grad_norms[i] / (stream_grad_norms[0] + eps)
+            result[f'stream_{i}_to_integrated_ratio'] = stream_grad_norms[i] / (integrated_grad_norm + eps)
+
+        return result
+
+    def detect_pathway_collapse(self, threshold: float = 10.0) -> tuple[bool, str]:
+        """
+        Detect if one pathway is dominating training.
+
+        Args:
+            threshold: Ratio threshold for detecting collapse (default: 10.0)
+
+        Returns:
+            Tuple of (is_collapsed, warning_message)
+        """
+        stats = self.compute_pathway_stats()
+
+        warnings = []
+        is_collapsed = False
+
+        # Check pairwise stream comparisons (compare each stream to stream0)
+        for i in range(1, self.num_streams):
+            ratio_key = f'stream_{i}_to_stream0_ratio'
+            if ratio_key in stats:
+                ratio = stats[ratio_key]
+                if ratio > threshold:
+                    warnings.append(f"Stream{i} dominates Stream0 (ratio: {ratio:.2f})")
+                    is_collapsed = True
+                elif ratio < 1.0 / threshold:
+                    warnings.append(f"Stream0 dominates Stream{i} (ratio: {ratio:.2f})")
+                    is_collapsed = True
+
+        # Check each stream vs integrated
+        for i in range(self.num_streams):
+            ratio_key = f'stream_{i}_to_integrated_ratio'
+            if ratio_key in stats:
+                ratio = stats[ratio_key]
+                if ratio > threshold:
+                    warnings.append(f"Stream{i} dominates Integrated (ratio: {ratio:.2f})")
+                    is_collapsed = True
+                elif ratio < 1.0 / threshold:
+                    warnings.append(f"Integrated dominates Stream{i} (ratio: {ratio:.2f})")
+                    is_collapsed = True
+
+        if is_collapsed:
+            return True, "\n".join(warnings)
+        else:
+            # Build balance summary
+            balance_parts = []
+            for i in range(1, self.num_streams):
+                ratio_key = f'stream_{i}_to_stream0_ratio'
+                if ratio_key in stats:
+                    balance_parts.append(f"S{i}/S0: {stats[ratio_key]:.2f}")
+
+            for i in range(self.num_streams):
+                ratio_key = f'stream_{i}_to_integrated_ratio'
+                if ratio_key in stats:
+                    balance_parts.append(f"S{i}/Int: {stats[ratio_key]:.2f}")
+
+            return False, f"All pathways balanced ({', '.join(balance_parts)})"
+
+    def get_layer_wise_stats(self) -> dict[str, dict[str, float]]:
+        """
+        Get gradient statistics grouped by layer.
+
+        Returns:
+            Dictionary mapping layer names to their gradient statistics
+        """
+        # Initialize default dict with dynamic stream count
+        layer_stats = defaultdict(lambda: {f'stream_{i}': 0.0 for i in range(self.num_streams)} | {'integrated': 0.0})
+
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                # Extract layer name (e.g., "layer1", "layer2", etc.)
+                layer_name = name.split('.')[0]
+                grad_norm_sq = param.grad.norm().item() ** 2
+
+                # Check if this is a stream-specific parameter
+                stream_idx = self._get_stream_index(name)
+                if stream_idx is not None and stream_idx < self.num_streams:
+                    layer_stats[layer_name][f'stream{stream_idx}'] += grad_norm_sq
+                elif 'integrated' in name:
+                    layer_stats[layer_name]['integrated'] += grad_norm_sq
+
+        # Convert to L2 norms and compute ratios
+        result = {}
+        eps = 1e-8
+        for layer_name, stats in layer_stats.items():
+            layer_result = {}
+
+            # Get norms for all streams
+            stream_norms = [stats[f'stream_{i}'] ** 0.5 for i in range(self.num_streams)]
+            int_norm = stats['integrated'] ** 0.5
+
+            # Add per-stream norms
+            for i in range(self.num_streams):
+                layer_result[f'stream_{i}_grad_norm'] = stream_norms[i]
+
+            layer_result['integrated_grad_norm'] = int_norm
+
+            # Compute ratios (compare each stream to stream0 and integrated)
+            for i in range(self.num_streams):
+                if i > 0:
+                    layer_result[f's{i}_to_s0_ratio'] = stream_norms[i] / (stream_norms[0] + eps)
+                layer_result[f's{i}_to_int_ratio'] = stream_norms[i] / (int_norm + eps)
+
+            result[layer_name] = layer_result
+
+        return result
+
+    def print_summary(self):
+        """Print a formatted summary of gradient statistics."""
+        stats = self.compute_pathway_stats()
+
+        print("\n" + "="*70)
+        print("LI-NET GRADIENT MONITORING SUMMARY")
+        print("="*70)
+
+        # Print stats for each stream
+        for i in range(self.num_streams):
+            print(f"Stream{i}:")
+            print(f"  Total gradient norm: {stats[f'stream_{i}_grad_norm']:.6f}")
+            print(f"  Mean gradient norm:  {stats[f'stream_{i}_mean']:.6f}")
+            print(f"  Parameter count:     {stats[f'stream_{i}_param_count']}")
+            print()
+
+        print(f"Integrated:")
+        print(f"  Total gradient norm: {stats['integrated_grad_norm']:.6f}")
+        print(f"  Mean gradient norm:  {stats['integrated_mean']:.6f}")
+        print(f"  Parameter count:     {stats['integrated_param_count']}")
+        print()
+        print(f"Shared (Classifier, etc.):")
+        print(f"  Total gradient norm: {stats['shared_grad_norm']:.6f}")
+        print(f"  Parameter count:     {stats['shared_param_count']}")
+        print()
+
+        print(f"Ratios:")
+        # Print stream-to-stream0 ratios
+        for i in range(1, self.num_streams):
+            ratio_key = f'stream_{i}_to_stream0_ratio'
+            if ratio_key in stats:
+                print(f"  Stream_{i}/Stream_0:    {stats[ratio_key]:.4f}")
+
+        # Print stream-to-integrated ratios
+        for i in range(self.num_streams):
+            ratio_key = f'stream_{i}_to_integrated_ratio'
+            if ratio_key in stats:
+                print(f"  Stream{i}/Integrated: {stats[ratio_key]:.4f}")
+
+        # Provide interpretation
+        print()
+        warnings = []
+        for i in range(1, self.num_streams):
+            ratio_key = f'stream_{i}_to_stream0_ratio'
+            if ratio_key in stats:
+                ratio = stats[ratio_key]
+                if ratio > 5.0:
+                    warnings.append(f"Stream{i} appears to dominate Stream0")
+                elif ratio < 0.2:
+                    warnings.append(f"Stream0 appears to dominate Stream{i}")
+
+        for i in range(self.num_streams):
+            ratio_key = f'stream_{i}_to_integrated_ratio'
+            if ratio_key in stats:
+                ratio = stats[ratio_key]
+                if ratio > 5.0:
+                    warnings.append(f"Stream{i} appears to dominate Integrated")
+                elif ratio < 0.2:
+                    warnings.append(f"Integrated appears to dominate Stream{i}")
+
+        if warnings:
+            for warning in warnings:
+                print(f"WARNING: {warning}")
+        else:
+            print("All pathways appear balanced")
+        print("="*70 + "\n")
+
+
+class GradientLogger:
+    """
+    Accumulate gradient statistics over multiple training steps for LINet.
+    """
+
+    def __init__(self, model: nn.Module):
+        """
+        Initialize gradient logger.
+
+        Args:
+            model: The LINet model to monitor
+        """
+        self.monitor = GradientMonitor(model)
+        self.history = []
+
+    def log(self):
+        """Log current gradient statistics."""
+        stats = self.monitor.compute_pathway_stats()
+        self.history.append(stats)
+
+    def get_history(self) -> list[dict[str, float]]:
+        """Get logged gradient history."""
+        return self.history
+
+    def clear(self):
+        """Clear logged history."""
+        self.history = []
+
+    def plot_history(self, save_path: Optional[str] = None):
+        """
+        Plot gradient history over time.
+
+        Args:
+            save_path: Optional path to save the plot
+        """
+        if not HAS_MATPLOTLIB:
+            print("matplotlib not available for plotting")
+            return
+
+        if not self.history:
+            print("No history to plot")
+            return
+
+        # Detect number of streams from first history entry
+        num_streams = self.monitor.num_streams
+
+        steps = list(range(len(self.history)))
+
+        # Collect data for all streams
+        stream_norms = []
+        for i in range(num_streams):
+            stream_norms.append([h[f'stream_{i}_grad_norm'] for h in self.history])
+
+        integrated_norms = [h['integrated_grad_norm'] for h in self.history]
+
+        # Collect ratio data
+        stream_to_stream0_ratios = []
+        for i in range(1, num_streams):
+            ratio_key = f'stream_{i}_to_stream0_ratio'
+            if ratio_key in self.history[0]:
+                stream_to_stream0_ratios.append(([h[ratio_key] for h in self.history], f'Stream_{i}/Stream_0'))
+
+        stream_to_int_ratios = []
+        for i in range(num_streams):
+            ratio_key = f'stream_{i}_to_integrated_ratio'
+            if ratio_key in self.history[0]:
+                stream_to_int_ratios.append(([h[ratio_key] for h in self.history], f'Stream{i}/Integrated'))
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+        # Plot gradient norms
+        markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
+        for i in range(num_streams):
+            ax1.plot(steps, stream_norms[i], label=f'Stream{i}', marker=markers[i % len(markers)])
+        ax1.plot(steps, integrated_norms, label='Integrated', marker=markers[num_streams % len(markers)])
+        ax1.set_xlabel('Training Step')
+        ax1.set_ylabel('Gradient Norm')
+        ax1.set_title('Gradient Magnitudes by Stream (LINet)')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Plot ratios
+        colors = ['blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+        color_idx = 0
+        for ratios, label in stream_to_stream0_ratios:
+            ax2.plot(steps, ratios, label=label, marker='o', color=colors[color_idx % len(colors)])
+            color_idx += 1
+        for ratios, label in stream_to_int_ratios:
+            ax2.plot(steps, ratios, label=label, marker='s', color=colors[color_idx % len(colors)])
+            color_idx += 1
+
+        ax2.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='Perfect Balance')
+        ax2.axhline(y=5.0, color='red', linestyle='--', alpha=0.3, label='Warning Threshold')
+        ax2.axhline(y=0.2, color='red', linestyle='--', alpha=0.3)
+        ax2.set_xlabel('Training Step')
+        ax2.set_ylabel('Ratio (log scale)')
+        ax2.set_title('Pathway Balance Ratios (LINet)')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        ax2.set_yscale('log')
+
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        else:
+            plt.show()
+
+
+class GradientHealthTracker:
+    """
+    Track gradient health during training with sliding-window analysis.
+
+    Wraps GradientMonitor to provide:
+    - Per-step gradient norm recording (pre-clip norms)
+    - Health assessment: vanishing, exploding, oscillating, or healthy
+    - Epoch-level summaries for training history
+    - Total gradient norm as a byproduct (for progress bar display)
+
+    Usage in training loop:
+        tracker = GradientHealthTracker(model)
+        for epoch in range(epochs):
+            for batch in dataloader:
+                loss.backward()
+                # For AMP: scaler.unscale_(optimizer)
+                # Call BEFORE gradient clipping and optimizer.step()
+                tracker.step()
+                # clip_grad_norm_(...)
+                # optimizer.step()
+            summary = tracker.get_epoch_summary()
+            tracker.reset_epoch()
+
+    Note: NOT compatible with DataParallel or concurrent forward passes.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        window_size: int = 20,
+        vanishing_threshold: float = 1e-7,
+        exploding_threshold: float = 100.0,
+        oscillation_flip_rate: float = 0.7
+    ):
+        """
+        Initialize gradient health tracker.
+
+        Args:
+            model: The LINet model to monitor
+            window_size: Sliding window size for oscillation detection (default: 20)
+            vanishing_threshold: Per-stream norm below this is vanishing (default: 1e-7)
+            exploding_threshold: Per-stream norm above this is exploding (default: 100.0)
+            oscillation_flip_rate: Sign-flip rate above this is oscillating (default: 0.7)
+        """
+        self.model = model
+        self.num_streams = getattr(model, 'num_streams', 2)
+        self.window_size = window_size
+        self.vanishing_threshold = vanishing_threshold
+        self.exploding_threshold = exploding_threshold
+        self.oscillation_flip_rate = oscillation_flip_rate
+
+        # Pre-categorize parameters for fast iteration
+        self._param_categories = self._build_param_index()
+
+        # Per-epoch accumulators (cleared each epoch via reset_epoch)
+        self._epoch_norms = []  # List of per-step norm dicts (finite steps only)
+        self._epoch_inf_steps = 0  # Count of steps where any norm was inf (AMP overflow)
+
+        # Cross-epoch history (spans entire training, for health assessment)
+        self._total_norm_history = deque(maxlen=window_size)  # For oscillation detection (finite only)
+        self._epoch_mean_norms = deque(maxlen=window_size)  # Per-epoch mean norms (dicts)
+
+        # Latest stats (for progress bar)
+        self._latest_stats = None
+        self._latest_total_norm = 0.0  # Last finite total norm
+
+    def _build_param_index(self) -> dict[str, list[tuple[str, torch.nn.Parameter]]]:
+        """Pre-categorize all parameters into stream/integrated/shared buckets."""
+        monitor = GradientMonitor(self.model)
+        categories = {
+            'shared': []
+        }
+        for i in range(self.num_streams):
+            categories[f'stream_{i}'] = []
+        categories['integrated'] = []
+
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            stream_idx = monitor._get_stream_index(name)
+            if stream_idx is not None and stream_idx < self.num_streams:
+                categories[f'stream_{stream_idx}'].append((name, param))
+            elif 'integrated' in name:
+                categories['integrated'].append((name, param))
+            else:
+                categories['shared'].append((name, param))
+
+        return categories
+
+    def step(self) -> dict:
+        """
+        Record current gradient statistics and return health assessment.
+
+        Call this AFTER loss.backward() + scaler.unscale_() (for AMP),
+        BEFORE gradient clipping and optimizer.step().
+        Pre-clip norms are recorded to detect actual gradient health.
+
+        When AMP overflow produces inf gradients, the step is counted
+        separately (inf_steps) and excluded from norm statistics so that
+        benign scaler overflows don't trigger false explosion warnings.
+
+        Returns:
+            Dict with per-stream norms, total norm, and health status.
+        """
+        # Compute norms from pre-categorized parameters (fast path)
+        norms = {}
+        total_norm_sq = 0.0
+        has_inf = False
+
+        for category, params in self._param_categories.items():
+            cat_norm_sq = 0.0
+            for _, param in params:
+                if param.grad is not None:
+                    grad_norm_sq = param.grad.norm().item() ** 2
+                    cat_norm_sq += grad_norm_sq
+            norm = cat_norm_sq ** 0.5
+            norms[category] = norm
+            total_norm_sq += cat_norm_sq
+            if not np.isfinite(norm):
+                has_inf = True
+
+        total_norm = total_norm_sq ** 0.5
+        norms['total'] = total_norm
+
+        if has_inf or not np.isfinite(total_norm):
+            # AMP overflow — count but don't pollute finite statistics
+            self._epoch_inf_steps += 1
+        else:
+            # Finite step — store for health assessment
+            self._epoch_norms.append(norms)
+            self._total_norm_history.append(total_norm)
+            # Update latest finite norm for progress bar
+            self._latest_stats = norms
+            self._latest_total_norm = total_norm
+
+        return norms
+
+    def get_latest_total_norm(self) -> float:
+        """Get the most recent finite total gradient norm (for progress bar display)."""
+        return self._latest_total_norm
+
+    def get_epoch_inf_steps(self) -> int:
+        """Get the number of inf-norm steps in the current epoch (AMP overflows)."""
+        return self._epoch_inf_steps
+
+    def _assess_health(self) -> dict[str, str]:
+        """
+        Assess gradient health from accumulated history.
+
+        Returns:
+            Dict with:
+            - 'status': 'warming_up', 'healthy', 'vanishing', 'exploding', 'oscillating'
+            - 'details': Human-readable description
+            - 'per_stream': Dict of per-stream status
+        """
+        num_epochs = len(self._epoch_mean_norms)
+
+        # Cold-start: not enough cross-epoch history for reliable assessment
+        if num_epochs < self.window_size:
+            return {
+                'status': 'warming_up',
+                'details': f'Collecting data ({num_epochs}/{self.window_size} epochs)',
+                'per_stream': {}
+            }
+
+        # Use the most recent window_size epoch means
+        recent = list(self._epoch_mean_norms)[-self.window_size:]
+        issues = []
+        per_stream = {}
+
+        # Check each stream
+        for i in range(self.num_streams):
+            key = f'stream_{i}'
+            stream_norms = [step.get(key, 0) for step in recent]
+            mean_norm = np.mean(stream_norms)
+            max_norm = np.max(stream_norms)
+
+            if mean_norm < self.vanishing_threshold:
+                per_stream[key] = 'vanishing'
+                issues.append(f'Stream_{i} vanishing (mean norm: {mean_norm:.2e})')
+            elif max_norm > self.exploding_threshold:
+                per_stream[key] = 'exploding'
+                issues.append(f'Stream_{i} exploding (max norm: {max_norm:.2e})')
+            else:
+                per_stream[key] = 'healthy'
+
+        # Check integrated
+        int_norms = [step.get('integrated', 0) for step in recent]
+        int_mean = np.mean(int_norms)
+        int_max = np.max(int_norms)
+        if int_mean < self.vanishing_threshold:
+            per_stream['integrated'] = 'vanishing'
+            issues.append(f'Integrated vanishing (mean norm: {int_mean:.2e})')
+        elif int_max > self.exploding_threshold:
+            per_stream['integrated'] = 'exploding'
+            issues.append(f'Integrated exploding (max norm: {int_max:.2e})')
+        else:
+            per_stream['integrated'] = 'healthy'
+
+        # Check oscillation via sign-flip rate on total norm deltas
+        total_norms = list(self._total_norm_history)
+        if len(total_norms) >= self.window_size:
+            deltas = [total_norms[t] - total_norms[t - 1] for t in range(1, len(total_norms))]
+            if len(deltas) > 1:
+                sign_flips = sum(
+                    1 for t in range(1, len(deltas))
+                    if (deltas[t] > 0) != (deltas[t - 1] > 0)
+                )
+                flip_rate = sign_flips / max(len(deltas) - 1, 1)
+                if flip_rate > self.oscillation_flip_rate:
+                    issues.append(f'Total gradient oscillating (flip rate: {flip_rate:.2f})')
+
+        # Determine overall status
+        if not issues:
+            status = 'healthy'
+            details = 'All gradient pathways healthy'
+        else:
+            # Prioritize: exploding > vanishing > oscillating
+            if any('exploding' in i for i in issues):
+                status = 'exploding'
+            elif any('vanishing' in i for i in issues):
+                status = 'vanishing'
+            else:
+                status = 'oscillating'
+            details = '; '.join(issues)
+
+        return {
+            'status': status,
+            'details': details,
+            'per_stream': per_stream
+        }
+
+    def get_epoch_summary(self) -> dict:
+        """
+        Get summary statistics for the current epoch.
+
+        Returns:
+            Dict with:
+            - 'norms': Dict of mean/max/min norms per stream (finite steps only)
+            - 'health': Health assessment dict
+            - 'total_norm_mean': Mean total gradient norm for progress display
+            - 'num_steps': Number of finite gradient steps recorded
+            - 'inf_steps': Number of inf-norm steps (AMP overflows)
+        """
+        if not self._epoch_norms:
+            return {
+                'norms': {},
+                'health': {'status': 'no_data', 'details': 'No gradient steps recorded', 'per_stream': {}},
+                'total_norm_mean': 0.0,
+                'num_steps': 0,
+                'inf_steps': self._epoch_inf_steps
+            }
+
+        # Aggregate finite norms across all steps in this epoch
+        summary_norms = {}
+        categories = list(self._epoch_norms[0].keys())
+        for cat in categories:
+            cat_values = [step[cat] for step in self._epoch_norms]
+            summary_norms[cat] = {
+                'mean': float(np.mean(cat_values)),
+                'max': float(np.max(cat_values)),
+                'min': float(np.min(cat_values)),
+            }
+
+        # Store epoch means in cross-epoch history (for health assessment)
+        epoch_means = {cat: summary_norms[cat]['mean'] for cat in summary_norms}
+        self._epoch_mean_norms.append(epoch_means)
+
+        health = self._assess_health()
+        total_norms = [step.get('total', 0.0) for step in self._epoch_norms]
+
+        return {
+            'norms': summary_norms,
+            'health': health,
+            'total_norm_mean': float(np.mean(total_norms)),
+            'num_steps': len(self._epoch_norms),
+            'inf_steps': self._epoch_inf_steps
+        }
+
+    def reset_epoch(self):
+        """Clear per-epoch accumulators. Call at the start of each epoch."""
+        self._epoch_norms = []
+        self._epoch_inf_steps = 0
+        # Note: _total_norm_history is NOT cleared -- it spans epochs for oscillation detection

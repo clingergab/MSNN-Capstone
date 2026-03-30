@@ -1,0 +1,68 @@
+# PyTorch model files
+*.pth
+*.pt
+*.bin
+saved_models/
+
+# Large datasets
+data/MNIST/
+data/cifar-100/
+data/cifar-100-python/
+data/ImageNet/
+data/
+*.tar.gz
+*.zip
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Package build artifacts
+*.egg-info/
+build/
+dist/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Output files
+outputs/
+checkpoints/
+results/*.png
+tests/benchmarks/trace_*.json
+tests/benchmarks/benchmark_results.json
+results/mcresnet_baseline_grid_search/
+mcresnet_baseline_grid_search/
+diagnostics/
+
+# Environment and IDE files
+.env
+.venv
+env/
+venv/
+ENV/
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# The patch file we created
+tensor_handling_fix.patch
+
+# Coverage reports
+htmlcov/
+coverage_reports/
+.coverage
+.coverage.*
+
+CLAUDE.md
+.claude/
