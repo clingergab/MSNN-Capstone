@@ -123,12 +123,12 @@ class DMBasicBlock(nn.Module):
         stream_identities = stream_inputs.copy()
         integrated_identity = integrated_input
 
-        # First conv block (integration happens inside LIConv2d!)
+        # First conv block (integration happens inside MSConv2d!)
         stream_outputs, integrated = self.conv1(stream_inputs, integrated_input)
         stream_outputs, integrated = self.bn1(stream_outputs, integrated)
         stream_outputs, integrated = self.relu(stream_outputs, integrated)
 
-        # Second conv block (integration happens inside LIConv2d!)
+        # Second conv block (integration happens inside MSConv2d!)
         stream_outputs, integrated = self.conv2(stream_outputs, integrated)
         stream_outputs, integrated = self.bn2(stream_outputs, integrated)
 
@@ -254,7 +254,7 @@ class DMBottleneck(nn.Module):
         stream_identities = stream_inputs.copy()
         integrated_identity = integrated_input
 
-        # Three conv blocks (integration happens inside LIConv2d!)
+        # Three conv blocks (integration happens inside MSConv2d!)
         stream_outputs, integrated = self.conv1(stream_inputs, integrated_input)
         stream_outputs, integrated = self.bn1(stream_outputs, integrated)
         stream_outputs, integrated = self.relu(stream_outputs, integrated)

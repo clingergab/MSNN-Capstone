@@ -1,5 +1,5 @@
 """
-Comprehensive BatchNorm divergence diagnosis between LINet and Original.
+Comprehensive BatchNorm divergence diagnosis between MSNet and Original.
 
 This script:
 1. Compares BN running stats after each forward pass
@@ -16,13 +16,13 @@ from collections import defaultdict
 import sys
 sys.path.insert(0, '/Users/gclinger/Documents/projects/Multi-Stream-Neural-Networks')
 
-from models.linear_integration.li_net import LINet as LINet
-from models.linear_integration.blocks import LIBasicBlock as LIBasicBlock3
-from models.linear_integration.conv import LIBatchNorm2d as LIBatchNorm2d3
+from models.linear_integration.ms_net import MSNet as MSNet
+from models.linear_integration.blocks import MSBasicBlock as MSBasicBlock3
+from models.linear_integration.conv import MSBatchNorm2d as MSBatchNorm2d3
 
-from src.models.linear_integration.li_net import LINet as LINetOriginal
-from src.models.linear_integration.blocks import LIBasicBlock as LIBasicBlockOriginal
-from src.models.linear_integration.conv import LIBatchNorm2d as LIBatchNorm2dOriginal
+from src.models.linear_integration.ms_net import MSNet as MSNetOriginal
+from src.models.linear_integration.blocks import MSBasicBlock as MSBasicBlockOriginal
+from src.models.linear_integration.conv import MSBatchNorm2d as MSBatchNorm2dOriginal
 
 SEED = 42
 
@@ -30,8 +30,8 @@ SEED = 42
 def create_models(seed=SEED):
     """Create both models with identical seeds."""
     torch.manual_seed(seed)
-    model_orig = LINetOriginal(
-        block=LIBasicBlockOriginal,
+    model_orig = MSNetOriginal(
+        block=MSBasicBlockOriginal,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream1_input_channels=3,
@@ -40,15 +40,15 @@ def create_models(seed=SEED):
     ).to('cpu')
 
     torch.manual_seed(seed)
-    model_linet = LINet(
-        block=LIBasicBlock3,
+    model_msnet = MSNet(
+        block=MSBasicBlock3,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream_input_channels=[3, 1],
         device='cpu'
     ).to('cpu')
 
-    return model_orig, model_linet
+    return model_orig, model_msnet
 
 
 def create_inputs(seed=SEED):
@@ -69,9 +69,9 @@ def test_bn_running_stats_per_step():
     print("Test 1: BN Running Stats Per Forward Pass")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     def get_bn1_stats(model, model_type):
         """Get bn1 running stats."""
@@ -85,9 +85,9 @@ def test_bn_running_stats_per_step():
                 'integrated_mean': bn1.integrated_running_mean.clone() if bn1.integrated_running_mean is not None else None,
                 'integrated_var': bn1.integrated_running_var.clone() if bn1.integrated_running_var is not None else None,
             }
-        else:  # linet
+        else:  # msnet
             stats = {}
-            # LINet uses stream{i}_running_mean attribute naming
+            # MSNet uses stream{i}_running_mean attribute naming
             for i in range(bn1.num_streams):
                 rm = getattr(bn1, f'stream{i}_running_mean')
                 rv = getattr(bn1, f'stream{i}_running_var')
@@ -101,41 +101,41 @@ def test_bn_running_stats_per_step():
     # Get initial stats
     print("\n--- Initial BN1 Running Stats ---")
     orig_stats_0 = get_bn1_stats(model_orig, "original")
-    li3_stats_0 = get_bn1_stats(model_linet, "linet")
+    ms_stats_0 = get_bn1_stats(model_msnet, "msnet")
 
     print(f"Original stream1_mean[0]: {orig_stats_0['stream1_mean'][0]:.6f}")
-    print(f"LINet  stream0_mean[0]:  {li3_stats_0['stream0_mean'][0]:.6f}")
+    print(f"MSNet  stream0_mean[0]:  {ms_stats_0['stream0_mean'][0]:.6f}")
 
     # Forward pass 1
     rgb, depth, targets = create_inputs(SEED)
 
     with torch.no_grad():
         _ = model_orig(rgb, depth)
-        _ = model_linet([rgb, depth])
+        _ = model_msnet([rgb, depth])
 
     orig_stats_1 = get_bn1_stats(model_orig, "original")
-    li3_stats_1 = get_bn1_stats(model_linet, "linet")
+    ms_stats_1 = get_bn1_stats(model_msnet, "msnet")
 
     print("\n--- After 1 Forward Pass ---")
     print(f"Original stream1_mean[0]: {orig_stats_1['stream1_mean'][0]:.6f}")
-    print(f"LINet  stream0_mean[0]:  {li3_stats_1['stream0_mean'][0]:.6f}")
+    print(f"MSNet  stream0_mean[0]:  {ms_stats_1['stream0_mean'][0]:.6f}")
 
-    diff_mean = (orig_stats_1['stream1_mean'] - li3_stats_1['stream0_mean']).abs().max().item()
-    diff_var = (orig_stats_1['stream1_var'] - li3_stats_1['stream0_var']).abs().max().item()
+    diff_mean = (orig_stats_1['stream1_mean'] - ms_stats_1['stream0_mean']).abs().max().item()
+    diff_var = (orig_stats_1['stream1_var'] - ms_stats_1['stream0_var']).abs().max().item()
     print(f"Stream1/0 mean diff: {diff_mean:.2e}")
     print(f"Stream1/0 var diff:  {diff_var:.2e}")
 
     # Forward pass 2 (same input)
     with torch.no_grad():
         _ = model_orig(rgb, depth)
-        _ = model_linet([rgb, depth])
+        _ = model_msnet([rgb, depth])
 
     orig_stats_2 = get_bn1_stats(model_orig, "original")
-    li3_stats_2 = get_bn1_stats(model_linet, "linet")
+    ms_stats_2 = get_bn1_stats(model_msnet, "msnet")
 
     print("\n--- After 2 Forward Passes ---")
-    diff_mean = (orig_stats_2['stream1_mean'] - li3_stats_2['stream0_mean']).abs().max().item()
-    diff_var = (orig_stats_2['stream1_var'] - li3_stats_2['stream0_var']).abs().max().item()
+    diff_mean = (orig_stats_2['stream1_mean'] - ms_stats_2['stream0_mean']).abs().max().item()
+    diff_var = (orig_stats_2['stream1_var'] - ms_stats_2['stream0_var']).abs().max().item()
     print(f"Stream1/0 mean diff: {diff_mean:.2e}")
     print(f"Stream1/0 var diff:  {diff_var:.2e}")
 
@@ -143,14 +143,14 @@ def test_bn_running_stats_per_step():
     rgb2, depth2, _ = create_inputs(SEED + 1)
     with torch.no_grad():
         _ = model_orig(rgb2, depth2)
-        _ = model_linet([rgb2, depth2])
+        _ = model_msnet([rgb2, depth2])
 
     orig_stats_3 = get_bn1_stats(model_orig, "original")
-    li3_stats_3 = get_bn1_stats(model_linet, "linet")
+    ms_stats_3 = get_bn1_stats(model_msnet, "msnet")
 
     print("\n--- After 3 Forward Passes (new input) ---")
-    diff_mean = (orig_stats_3['stream1_mean'] - li3_stats_3['stream0_mean']).abs().max().item()
-    diff_var = (orig_stats_3['stream1_var'] - li3_stats_3['stream0_var']).abs().max().item()
+    diff_mean = (orig_stats_3['stream1_mean'] - ms_stats_3['stream0_mean']).abs().max().item()
+    diff_var = (orig_stats_3['stream1_var'] - ms_stats_3['stream0_var']).abs().max().item()
     print(f"Stream1/0 mean diff: {diff_mean:.2e}")
     print(f"Stream1/0 var diff:  {diff_var:.2e}")
 
@@ -169,18 +169,18 @@ def test_bn_initialization():
     print("Test 2: BN Initialization Check")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     # Check bn1 initialization
     bn1_orig = model_orig.bn1
-    bn1_li3 = model_linet.bn1
+    bn1_li3 = model_msnet.bn1
 
     print("\n--- Original bn1 ---")
     print(f"  stream1_running_mean init: {bn1_orig.stream1_running_mean.mean():.6f}")
     print(f"  stream1_running_var init:  {bn1_orig.stream1_running_var.mean():.6f}")
     print(f"  num_batches_tracked: {bn1_orig.num_batches_tracked}")
 
-    print("\n--- LINet bn1 ---")
+    print("\n--- MSNet bn1 ---")
     stream0_mean = getattr(bn1_li3, 'stream0_running_mean')
     stream0_var = getattr(bn1_li3, 'stream0_running_var')
     print(f"  stream0_running_mean init: {stream0_mean.mean():.6f}")
@@ -190,12 +190,12 @@ def test_bn_initialization():
     # Check momentum
     print("\n--- Momentum ---")
     print(f"Original momentum: {bn1_orig.momentum}")
-    print(f"LINet momentum:   {bn1_li3.momentum}")
+    print(f"MSNet momentum:   {bn1_li3.momentum}")
 
     # Check eps
     print("\n--- Epsilon ---")
     print(f"Original eps: {bn1_orig.eps}")
-    print(f"LINet eps:   {bn1_li3.eps}")
+    print(f"MSNet eps:   {bn1_li3.eps}")
 
 
 # ============================================================================
@@ -207,13 +207,13 @@ def test_bn_forward_method():
     print("Test 3: BN Forward Method Tracing")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     # Track BN calls
     orig_bn_calls = []
-    li3_bn_calls = []
+    ms_bn_calls = []
 
     def make_bn_hook(call_list, name):
         def hook(module, input, output):
@@ -228,22 +228,22 @@ def test_bn_forward_method():
         if 'bn' in name.lower() and hasattr(module, 'stream1_running_mean'):
             module.register_forward_hook(make_bn_hook(orig_bn_calls, name))
 
-    for name, module in model_linet.named_modules():
+    for name, module in model_msnet.named_modules():
         if 'bn' in name.lower() and hasattr(module, 'stream0_running_mean'):
-            module.register_forward_hook(make_bn_hook(li3_bn_calls, name))
+            module.register_forward_hook(make_bn_hook(ms_bn_calls, name))
 
     rgb, depth, _ = create_inputs()
 
     with torch.no_grad():
         _ = model_orig(rgb, depth)
-        _ = model_linet([rgb, depth])
+        _ = model_msnet([rgb, depth])
 
     print(f"\nOriginal BN layer calls: {len(orig_bn_calls)}")
     for call in orig_bn_calls[:5]:
         print(f"  {call}")
 
-    print(f"\nLINet BN layer calls: {len(li3_bn_calls)}")
-    for call in li3_bn_calls[:5]:
+    print(f"\nMSNet BN layer calls: {len(ms_bn_calls)}")
+    for call in ms_bn_calls[:5]:
         print(f"  {call}")
 
 
@@ -257,7 +257,7 @@ def test_without_running_stats():
     print("=" * 80)
 
     # We need to create models and then disable track_running_stats
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     # Disable track_running_stats on all BN layers
     def disable_running_stats(model):
@@ -275,7 +275,7 @@ def test_without_running_stats():
                 module.stream1_running_var = None
                 module.stream2_running_mean = None
                 module.stream2_running_var = None
-            # For multi-stream BN (LINet N-stream)
+            # For multi-stream BN (MSNet N-stream)
             if hasattr(module, 'stream0_running_mean'):
                 for i in range(getattr(module, 'num_streams', 2)):
                     setattr(module, f'stream{i}_running_mean', None)
@@ -285,23 +285,23 @@ def test_without_running_stats():
                 module.integrated_running_var = None
 
     disable_running_stats(model_orig)
-    disable_running_stats(model_linet)
+    disable_running_stats(model_msnet)
 
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     rgb, depth, targets = create_inputs()
 
     # Forward
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb, depth])
+    out_ms = model_msnet([rgb, depth])
 
     print(f"\n--- Forward Pass (no running stats) ---")
-    print(f"Output diff: {(out_orig - out_li3).abs().max():.2e}")
+    print(f"Output diff: {(out_orig - out_ms).abs().max():.2e}")
 
     # Backward
     loss_orig = F.cross_entropy(out_orig, targets)
-    loss_li3 = F.cross_entropy(out_li3, targets)
+    loss_li3 = F.cross_entropy(out_ms, targets)
 
     loss_orig.backward()
     loss_li3.backward()
@@ -309,10 +309,10 @@ def test_without_running_stats():
     # Compare gradients with proper name mapping
     print(f"\n--- Gradient Comparison (no running stats) ---")
 
-    # Build parameter dict for LINet with mapped names
-    def map_li3_name_to_orig(li3_name):
-        """Map LINet parameter name to Original parameter name."""
-        return (li3_name
+    # Build parameter dict for MSNet with mapped names
+    def map_ms_name_to_orig(ms_name):
+        """Map MSNet parameter name to Original parameter name."""
+        return (ms_name
                 .replace('stream_weights.0', 'stream1_weight')
                 .replace('stream_weights.1', 'stream2_weight')
                 .replace('stream_biases.0', 'stream1_bias')
@@ -320,16 +320,16 @@ def test_without_running_stats():
                 .replace('integration_from_streams.0', 'integration_from_stream1')
                 .replace('integration_from_streams.1', 'integration_from_stream2'))
 
-    li3_params = {map_li3_name_to_orig(n): p for n, p in model_linet.named_parameters()}
+    ms_params = {map_ms_name_to_orig(n): p for n, p in model_msnet.named_parameters()}
 
     grad_diffs = []
     for orig_name, orig_param in model_orig.named_parameters():
         if orig_param.grad is None:
             continue
-        if orig_name in li3_params:
-            li3_param = li3_params[orig_name]
-            if li3_param.grad is not None and orig_param.shape == li3_param.shape:
-                diff = (orig_param.grad - li3_param.grad).abs().max().item()
+        if orig_name in ms_params:
+            ms_param = ms_params[orig_name]
+            if ms_param.grad is not None and orig_param.shape == ms_param.shape:
+                diff = (orig_param.grad - ms_param.grad).abs().max().item()
                 grad_diffs.append((orig_name, diff))
 
     # Show layers with largest differences
@@ -359,14 +359,14 @@ def test_bn_forward_implementations():
 
     # Create isolated BN layers
     torch.manual_seed(SEED)
-    bn_orig = LIBatchNorm2dOriginal(
+    bn_orig = MSBatchNorm2dOriginal(
         stream1_num_features=64,
         stream2_num_features=64,
         integrated_num_features=64
     )
 
     torch.manual_seed(SEED)
-    bn_li3 = LIBatchNorm2d3(
+    bn_li3 = MSBatchNorm2d3(
         stream_num_features=[64, 64],
         integrated_num_features=64
     )
@@ -392,10 +392,10 @@ def test_bn_forward_implementations():
     # Check running stats after forward
     print("\n--- Running Stats After Forward ---")
     print(f"Original stream1_running_mean[0]: {bn_orig.stream1_running_mean[0]:.6f}")
-    li3_stream0_mean = getattr(bn_li3, 'stream0_running_mean')
-    print(f"LINet  stream0_running_mean[0]:  {li3_stream0_mean[0]:.6f}")
+    ms_stream0_mean = getattr(bn_li3, 'stream0_running_mean')
+    print(f"MSNet  stream0_running_mean[0]:  {ms_stream0_mean[0]:.6f}")
 
-    diff = (bn_orig.stream1_running_mean - li3_stream0_mean).abs().max().item()
+    diff = (bn_orig.stream1_running_mean - ms_stream0_mean).abs().max().item()
     print(f"Running mean diff: {diff:.2e}")
 
     if diff < 1e-6:
@@ -413,22 +413,22 @@ def test_parameter_ordering():
     print("Test 6: Parameter Ordering Check")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     orig_names = [n for n, _ in model_orig.named_parameters()]
-    li3_names = [n for n, _ in model_linet.named_parameters()]
+    ms_names = [n for n, _ in model_msnet.named_parameters()]
 
     print(f"\nOriginal has {len(orig_names)} parameters")
-    print(f"LINet has {len(li3_names)} parameters")
+    print(f"MSNet has {len(ms_names)} parameters")
 
     # Check first 20 parameter names
     print("\n--- First 20 Parameter Names ---")
-    print(f"{'Idx':<5} {'Original':<45} {'LINet':<45}")
+    print(f"{'Idx':<5} {'Original':<45} {'MSNet':<45}")
     print("-" * 95)
 
-    for i in range(min(20, len(orig_names), len(li3_names))):
+    for i in range(min(20, len(orig_names), len(ms_names))):
         o = orig_names[i]
-        l = li3_names[i]
+        l = ms_names[i]
         match = "✓" if o.replace('stream1', 'stream_weights.0').replace('stream2', 'stream_weights.1') in l or o == l else "✗"
         print(f"{i:<5} {o:<45} {l:<45} {match}")
 
@@ -442,17 +442,17 @@ def test_train_mode_gradients_detailed():
     print("Test 7: Detailed Train Mode Gradient Analysis")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     rgb, depth, targets = create_inputs()
 
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb, depth])
+    out_ms = model_msnet([rgb, depth])
 
     loss_orig = F.cross_entropy(out_orig, targets)
-    loss_li3 = F.cross_entropy(out_li3, targets)
+    loss_li3 = F.cross_entropy(out_ms, targets)
 
     loss_orig.backward()
     loss_li3.backward()
@@ -463,9 +463,9 @@ def test_train_mode_gradients_detailed():
     integration_diffs = []
     other_diffs = []
 
-    # Map LINet names to Original names
-    def map_name(li3_name):
-        return (li3_name
+    # Map MSNet names to Original names
+    def map_name(ms_name):
+        return (ms_name
                 .replace('stream_weights.0', 'stream1_weight')
                 .replace('stream_weights.1', 'stream2_weight')
                 .replace('stream_biases.0', 'stream1_bias')
@@ -475,16 +475,16 @@ def test_train_mode_gradients_detailed():
                 .replace('stream_running_means.0', 'stream1_running_mean')
                 .replace('stream_running_means.1', 'stream2_running_mean'))
 
-    li3_params = {map_name(n): p for n, p in model_linet.named_parameters()}
+    ms_params = {map_name(n): p for n, p in model_msnet.named_parameters()}
 
     for orig_name, orig_param in model_orig.named_parameters():
         if orig_param.grad is None:
             continue
 
-        if orig_name in li3_params:
-            li3_param = li3_params[orig_name]
-            if li3_param.grad is not None and orig_param.shape == li3_param.shape:
-                diff = (orig_param.grad - li3_param.grad).abs().max().item()
+        if orig_name in ms_params:
+            ms_param = ms_params[orig_name]
+            if ms_param.grad is not None and orig_param.shape == ms_param.shape:
+                diff = (orig_param.grad - ms_param.grad).abs().max().item()
 
                 if 'conv' in orig_name and 'bn' not in orig_name:
                     conv_diffs.append((orig_name, diff))
@@ -536,27 +536,27 @@ def test_eval_mode_complete():
     print("Test 8: Complete Eval Mode Test")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.eval()
-    model_linet.eval()
+    model_msnet.eval()
 
     rgb, depth, targets = create_inputs()
 
     # Forward
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb, depth])
+    out_ms = model_msnet([rgb, depth])
 
     print(f"\n--- Eval Mode Forward ---")
-    print(f"Output diff: {(out_orig - out_li3).abs().max():.2e}")
+    print(f"Output diff: {(out_orig - out_ms).abs().max():.2e}")
 
     # Backward
     out_orig.sum().backward()
-    out_li3.sum().backward()
+    out_ms.sum().backward()
 
     # Compare all gradients with proper name mapping
-    def map_li3_name_to_orig(li3_name):
-        """Map LINet parameter name to Original parameter name."""
-        return (li3_name
+    def map_ms_name_to_orig(ms_name):
+        """Map MSNet parameter name to Original parameter name."""
+        return (ms_name
                 .replace('stream_weights.0', 'stream1_weight')
                 .replace('stream_weights.1', 'stream2_weight')
                 .replace('stream_biases.0', 'stream1_bias')
@@ -564,17 +564,17 @@ def test_eval_mode_complete():
                 .replace('integration_from_streams.0', 'integration_from_stream1')
                 .replace('integration_from_streams.1', 'integration_from_stream2'))
 
-    li3_params = {map_li3_name_to_orig(n): p for n, p in model_linet.named_parameters()}
+    ms_params = {map_ms_name_to_orig(n): p for n, p in model_msnet.named_parameters()}
 
     max_diff = 0
     matched = 0
     for orig_name, orig_param in model_orig.named_parameters():
         if orig_param.grad is None:
             continue
-        if orig_name in li3_params:
-            li3_param = li3_params[orig_name]
-            if li3_param.grad is not None and orig_param.shape == li3_param.shape:
-                diff = (orig_param.grad - li3_param.grad).abs().max().item()
+        if orig_name in ms_params:
+            ms_param = ms_params[orig_name]
+            if ms_param.grad is not None and orig_param.shape == ms_param.shape:
+                diff = (orig_param.grad - ms_param.grad).abs().max().item()
                 max_diff = max(max_diff, diff)
                 matched += 1
 

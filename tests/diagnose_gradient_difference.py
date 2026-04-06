@@ -1,5 +1,5 @@
 """
-Deep dive into why gradients differ between LINet and Original.
+Deep dive into why gradients differ between MSNet and Original.
 
 Forward pass is identical, but gradients differ by ~1e-5.
 This means the backward pass has a bug.
@@ -13,13 +13,13 @@ import numpy as np
 import sys
 sys.path.insert(0, '/Users/gclinger/Documents/projects/Multi-Stream-Neural-Networks')
 
-from models.linear_integration.li_net import LINet as LINet
-from models.linear_integration.blocks import LIBasicBlock as LIBasicBlock3
-from models.linear_integration.conv import LIConv2d as LIConv2d3
+from models.linear_integration.ms_net import MSNet as MSNet
+from models.linear_integration.blocks import MSBasicBlock as MSBasicBlock3
+from models.linear_integration.conv import MSConv2d as MSConv2d3
 
-from src.models.linear_integration.li_net import LINet as LINetOriginal
-from src.models.linear_integration.blocks import LIBasicBlock as LIBasicBlockOriginal
-from src.models.linear_integration.conv import LIConv2d as LIConv2dOriginal
+from src.models.linear_integration.ms_net import MSNet as MSNetOriginal
+from src.models.linear_integration.blocks import MSBasicBlock as MSBasicBlockOriginal
+from src.models.linear_integration.conv import MSConv2d as MSConv2dOriginal
 
 SEED = 42
 
@@ -27,13 +27,13 @@ SEED = 42
 def test_conv2d_gradient_isolated():
     """Test just the conv layers in isolation to find the gradient bug."""
     print("=" * 80)
-    print("Testing LIConv2d Gradient in Isolation")
+    print("Testing MSConv2d Gradient in Isolation")
     print("=" * 80)
 
     torch.manual_seed(SEED)
 
     # Create Original conv
-    conv_orig = LIConv2dOriginal(
+    conv_orig = MSConv2dOriginal(
         stream1_in_channels=3,
         stream1_out_channels=64,
         stream2_in_channels=1,
@@ -48,8 +48,8 @@ def test_conv2d_gradient_isolated():
 
     torch.manual_seed(SEED)
 
-    # Create LINet conv
-    conv_linet = LIConv2d3(
+    # Create MSNet conv
+    conv_msnet = MSConv2d3(
         stream_in_channels=[3, 1],
         stream_out_channels=[64, 64],
         integrated_in_channels=0,
@@ -72,8 +72,8 @@ def test_conv2d_gradient_isolated():
     # Forward pass - Original
     s1_orig, s2_orig, int_orig = conv_orig(rgb, depth, None)
 
-    # Forward pass - LINet
-    streams_li3, int_li3 = conv_linet([rgb_clone, depth_clone], None)
+    # Forward pass - MSNet
+    streams_li3, int_li3 = conv_msnet([rgb_clone, depth_clone], None)
 
     print("\n--- Forward Pass Comparison ---")
     print(f"stream1 diff: {(s1_orig - streams_li3[0]).abs().max().item():.2e}")
@@ -95,24 +95,24 @@ def test_conv2d_gradient_isolated():
     print("\n--- Gradient Comparison ---")
 
     # Stream1 weight
-    grad_diff_s1 = (conv_orig.stream1_weight.grad - conv_linet.stream_weights[0].grad).abs()
+    grad_diff_s1 = (conv_orig.stream1_weight.grad - conv_msnet.stream_weights[0].grad).abs()
     print(f"\nstream1_weight grad diff:")
     print(f"  Max:  {grad_diff_s1.max().item():.2e}")
     print(f"  Mean: {grad_diff_s1.mean().item():.2e}")
 
     # Stream2 weight
-    grad_diff_s2 = (conv_orig.stream2_weight.grad - conv_linet.stream_weights[1].grad).abs()
+    grad_diff_s2 = (conv_orig.stream2_weight.grad - conv_msnet.stream_weights[1].grad).abs()
     print(f"\nstream2_weight grad diff:")
     print(f"  Max:  {grad_diff_s2.max().item():.2e}")
     print(f"  Mean: {grad_diff_s2.mean().item():.2e}")
 
     # Integration weights
-    grad_diff_int1 = (conv_orig.integration_from_stream1.grad - conv_linet.integration_from_streams[0].grad).abs()
+    grad_diff_int1 = (conv_orig.integration_from_stream1.grad - conv_msnet.integration_from_streams[0].grad).abs()
     print(f"\nintegration_from_stream1 grad diff:")
     print(f"  Max:  {grad_diff_int1.max().item():.2e}")
     print(f"  Mean: {grad_diff_int1.mean().item():.2e}")
 
-    grad_diff_int2 = (conv_orig.integration_from_stream2.grad - conv_linet.integration_from_streams[1].grad).abs()
+    grad_diff_int2 = (conv_orig.integration_from_stream2.grad - conv_msnet.integration_from_streams[1].grad).abs()
     print(f"\nintegration_from_stream2 grad diff:")
     print(f"  Max:  {grad_diff_int2.max().item():.2e}")
     print(f"  Mean: {grad_diff_int2.mean().item():.2e}")
@@ -163,7 +163,7 @@ def compare_forward_implementations():
     print(f"integrated: {integrated_orig.shape}, mean={integrated_orig.mean():.6f}")
 
     # ========== LINET LOGIC ==========
-    print("\n--- LINet Forward Logic (from li_net/conv.py) ---")
+    print("\n--- MSNet Forward Logic (from ms_net/conv.py) ---")
 
     # Stream convolutions - SAME as original
     stream0_raw = F.conv2d(rgb, stream1_weight, None, stride=2, padding=3)
@@ -172,7 +172,7 @@ def compare_forward_implementations():
     print(f"stream0_raw: {stream0_raw.shape}, mean={stream0_raw.mean():.6f}")
     print(f"stream1_raw: {stream1_raw.shape}, mean={stream1_raw.mean():.6f}")
 
-    # Integration (LINet uses stream_out_raw which NEVER has bias)
+    # Integration (MSNet uses stream_out_raw which NEVER has bias)
     integrated_from_s0 = F.conv2d(stream0_raw, int_from_s1, None, stride=1, padding=0)
     integrated_from_s1_li3 = F.conv2d(stream1_raw, int_from_s2, None, stride=1, padding=0)
 
@@ -221,7 +221,7 @@ def test_backward_with_gradient_check():
 
             return s1_out, s2_out, integrated
 
-    class LINetStyleConv(nn.Module):
+    class MSNetStyleConv(nn.Module):
         def __init__(self):
             super().__init__()
             self.stream_weights = nn.ParameterList([
@@ -258,7 +258,7 @@ def test_backward_with_gradient_check():
     orig = OriginalStyleConv()
 
     torch.manual_seed(SEED)
-    li3 = LINetStyleConv()
+    li3 = MSNetStyleConv()
 
     # Copy weights to ensure they're identical
     li3.stream_weights[0].data.copy_(orig.stream1_weight.data)
@@ -300,33 +300,33 @@ def test_backward_with_gradient_check():
     # Check if minimal models have identical gradients
     if (orig.stream1_weight.grad - li3.stream_weights[0].grad).abs().max() < 1e-6:
         print("\n✅ Minimal models have identical gradients!")
-        print("   The difference must be in the actual LIConv2d implementation.")
+        print("   The difference must be in the actual MSConv2d implementation.")
     else:
         print("\n⚠️  Even minimal models have gradient differences!")
         print("   The logic itself is different.")
 
 
 def inspect_actual_conv_forward():
-    """Inspect the actual LIConv2d._conv_forward implementations."""
+    """Inspect the actual MSConv2d._conv_forward implementations."""
     print("\n" + "=" * 80)
-    print("Inspecting Actual LIConv2d Forward Implementations")
+    print("Inspecting Actual MSConv2d Forward Implementations")
     print("=" * 80)
 
     # Read and compare the forward methods
     import inspect
 
-    print("\n--- Original LIConv2d._conv_forward signature ---")
-    print(inspect.signature(LIConv2dOriginal._conv_forward))
+    print("\n--- Original MSConv2d._conv_forward signature ---")
+    print(inspect.signature(MSConv2dOriginal._conv_forward))
 
-    print("\n--- LINet LIConv2d._conv_forward signature ---")
-    print(inspect.signature(LIConv2d3._conv_forward))
+    print("\n--- MSNet MSConv2d._conv_forward signature ---")
+    print(inspect.signature(MSConv2d3._conv_forward))
 
     # Check if they have different argument handling
-    orig_args = inspect.signature(LIConv2dOriginal._conv_forward).parameters
-    li3_args = inspect.signature(LIConv2d3._conv_forward).parameters
+    orig_args = inspect.signature(MSConv2dOriginal._conv_forward).parameters
+    ms_args = inspect.signature(MSConv2d3._conv_forward).parameters
 
     print(f"\nOriginal args: {list(orig_args.keys())}")
-    print(f"LINet args:   {list(li3_args.keys())}")
+    print(f"MSNet args:   {list(ms_args.keys())}")
 
 
 def test_bn_gradient_flow():
@@ -339,8 +339,8 @@ def test_bn_gradient_flow():
     # Let's test full model gradient flow
 
     torch.manual_seed(SEED)
-    model_orig = LINetOriginal(
-        block=LIBasicBlockOriginal,
+    model_orig = MSNetOriginal(
+        block=MSBasicBlockOriginal,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream1_input_channels=3,
@@ -349,8 +349,8 @@ def test_bn_gradient_flow():
     ).to('cpu')
 
     torch.manual_seed(SEED)
-    model_linet = LINet(
-        block=LIBasicBlock3,
+    model_msnet = MSNet(
+        block=MSBasicBlock3,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream_input_channels=[3, 1],
@@ -359,7 +359,7 @@ def test_bn_gradient_flow():
 
     # Set to eval mode to disable BN running stats updates
     model_orig.eval()
-    model_linet.eval()
+    model_msnet.eval()
 
     torch.manual_seed(SEED)
     rgb = torch.randn(4, 3, 32, 32, requires_grad=True)
@@ -371,20 +371,20 @@ def test_bn_gradient_flow():
 
     # Forward in eval mode
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb_clone, depth_clone])
+    out_ms = model_msnet([rgb_clone, depth_clone])
 
     print(f"\n--- Eval Mode Forward ---")
-    print(f"Output diff: {(out_orig - out_li3).abs().max():.2e}")
+    print(f"Output diff: {(out_orig - out_ms).abs().max():.2e}")
 
     # Backward
     loss_orig = F.cross_entropy(out_orig, targets)
-    loss_li3 = F.cross_entropy(out_li3, targets)
+    loss_li3 = F.cross_entropy(out_ms, targets)
 
     loss_orig.backward()
     loss_li3.backward()
 
     # Compare conv1 gradients
-    grad_diff = (model_orig.conv1.stream1_weight.grad - model_linet.conv1.stream_weights[0].grad).abs()
+    grad_diff = (model_orig.conv1.stream1_weight.grad - model_msnet.conv1.stream_weights[0].grad).abs()
     print(f"\n--- Eval Mode Gradients ---")
     print(f"conv1.stream1_weight grad diff: max={grad_diff.max():.2e}, mean={grad_diff.mean():.2e}")
 
@@ -402,8 +402,8 @@ def trace_full_gradient_chain():
     print("=" * 80)
 
     torch.manual_seed(SEED)
-    model_orig = LINetOriginal(
-        block=LIBasicBlockOriginal,
+    model_orig = MSNetOriginal(
+        block=MSBasicBlockOriginal,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream1_input_channels=3,
@@ -412,8 +412,8 @@ def trace_full_gradient_chain():
     ).to('cpu')
 
     torch.manual_seed(SEED)
-    model_linet = LINet(
-        block=LIBasicBlock3,
+    model_msnet = MSNet(
+        block=MSBasicBlock3,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream_input_channels=[3, 1],
@@ -421,7 +421,7 @@ def trace_full_gradient_chain():
     ).to('cpu')
 
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     torch.manual_seed(SEED)
     rgb = torch.randn(4, 3, 32, 32)
@@ -430,11 +430,11 @@ def trace_full_gradient_chain():
 
     # Forward
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb, depth])
+    out_ms = model_msnet([rgb, depth])
 
     # Backward
     F.cross_entropy(out_orig, targets).backward()
-    F.cross_entropy(out_li3, targets).backward()
+    F.cross_entropy(out_ms, targets).backward()
 
     # Compare gradients at each layer
     print("\n--- Gradient Comparison by Layer ---")
@@ -443,23 +443,23 @@ def trace_full_gradient_chain():
 
     for layer_name in layers:
         layer_orig = getattr(model_orig, layer_name)
-        layer_li3 = getattr(model_linet, layer_name)
+        layer_li3 = getattr(model_msnet, layer_name)
 
         orig_grad_norm = 0
-        li3_grad_norm = 0
+        ms_grad_norm = 0
         max_diff = 0
 
         for (n1, p1), (n2, p2) in zip(layer_orig.named_parameters(), layer_li3.named_parameters()):
             if p1.grad is not None and p2.grad is not None:
                 orig_grad_norm += p1.grad.norm().item()
-                li3_grad_norm += p2.grad.norm().item()
+                ms_grad_norm += p2.grad.norm().item()
                 diff = (p1.grad - p2.grad).abs().max().item()
                 if diff > max_diff:
                     max_diff = diff
 
-        rel_diff = abs(orig_grad_norm - li3_grad_norm) / max(orig_grad_norm, 1e-8)
+        rel_diff = abs(orig_grad_norm - ms_grad_norm) / max(orig_grad_norm, 1e-8)
         flag = " ⚠️" if max_diff > 1e-4 else ""
-        print(f"{layer_name}: orig_norm={orig_grad_norm:.4f}, li3_norm={li3_grad_norm:.4f}, max_diff={max_diff:.2e}{flag}")
+        print(f"{layer_name}: orig_norm={orig_grad_norm:.4f}, ms_norm={ms_grad_norm:.4f}, max_diff={max_diff:.2e}{flag}")
 
 
 if __name__ == "__main__":

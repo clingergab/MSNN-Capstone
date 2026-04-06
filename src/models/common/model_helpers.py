@@ -42,7 +42,7 @@ def load_pretrained_backbone(
 
     Example::
 
-        info = load_pretrained_backbone(model, 'checkpoints/omni_best.pt')
+        info = load_pretrained_backbone(model, 'checkpoints/model_best.pt')
         # info['skipped'] == ['fc.weight', 'fc.bias']
     """
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)

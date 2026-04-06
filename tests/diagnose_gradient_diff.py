@@ -1,5 +1,5 @@
 """
-Deep investigation of gradient differences between Original and LINet.
+Deep investigation of gradient differences between Original and MSNet.
 
 This test traces through the forward/backward pass to find where gradients diverge.
 """
@@ -9,11 +9,11 @@ import torch.nn as nn
 import sys
 sys.path.insert(0, '/Users/gclinger/Documents/projects/Multi-Stream-Neural-Networks')
 
-from models.linear_integration.li_net import LINet as LINet
-from models.linear_integration.blocks import LIBasicBlock as LIBasicBlock3
+from models.linear_integration.ms_net import MSNet as MSNet
+from models.linear_integration.blocks import MSBasicBlock as MSBasicBlock3
 
-from src.models.linear_integration.li_net import LINet as LINetOriginal
-from src.models.linear_integration.blocks import LIBasicBlock as LIBasicBlockOriginal
+from src.models.linear_integration.ms_net import MSNet as MSNetOriginal
+from src.models.linear_integration.blocks import MSBasicBlock as MSBasicBlockOriginal
 
 SEED = 42
 
@@ -21,8 +21,8 @@ SEED = 42
 def create_models():
     """Create both models with identical seeds."""
     torch.manual_seed(SEED)
-    model_orig = LINetOriginal(
-        block=LIBasicBlockOriginal,
+    model_orig = MSNetOriginal(
+        block=MSBasicBlockOriginal,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream1_input_channels=3,
@@ -31,15 +31,15 @@ def create_models():
     ).to('cpu')
 
     torch.manual_seed(SEED)
-    model_linet = LINet(
-        block=LIBasicBlock3,
+    model_msnet = MSNet(
+        block=MSBasicBlock3,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream_input_channels=[3, 1],
         device='cpu'
     ).to('cpu')
 
-    return model_orig, model_linet
+    return model_orig, model_msnet
 
 
 def test_forward_layer_by_layer():
@@ -48,9 +48,9 @@ def test_forward_layer_by_layer():
     print("Test: Layer-by-Layer Forward Pass Comparison")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.eval()
-    model_linet.eval()
+    model_msnet.eval()
 
     torch.manual_seed(SEED)
     rgb = torch.randn(2, 3, 32, 32)
@@ -59,7 +59,7 @@ def test_forward_layer_by_layer():
     with torch.no_grad():
         # conv1
         s1_orig, s2_orig, int_orig = model_orig.conv1(rgb, depth, None)
-        s_li3, int_li3 = model_linet.conv1([rgb, depth], None)
+        s_li3, int_li3 = model_msnet.conv1([rgb, depth], None)
 
         print("\n--- After conv1 ---")
         print(f"stream1 diff: {(s1_orig - s_li3[0]).abs().max().item():.2e}")
@@ -68,7 +68,7 @@ def test_forward_layer_by_layer():
 
         # bn1
         s1_orig, s2_orig, int_orig = model_orig.bn1(s1_orig, s2_orig, int_orig)
-        s_li3, int_li3 = model_linet.bn1(s_li3, int_li3)
+        s_li3, int_li3 = model_msnet.bn1(s_li3, int_li3)
 
         print("\n--- After bn1 ---")
         print(f"stream1 diff: {(s1_orig - s_li3[0]).abs().max().item():.2e}")
@@ -82,9 +82,9 @@ def test_gradient_per_layer():
     print("Test: Layer-by-Layer Gradient Comparison")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     torch.manual_seed(SEED)
     rgb = torch.randn(2, 3, 32, 32)
@@ -95,13 +95,13 @@ def test_gradient_per_layer():
 
     # Forward
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb, depth])
+    out_ms = model_msnet([rgb, depth])
 
-    print(f"\nOutput diff: {(out_orig - out_li3).abs().max().item():.2e}")
+    print(f"\nOutput diff: {(out_orig - out_ms).abs().max().item():.2e}")
 
     # Loss
     loss_orig = criterion(out_orig, targets)
-    loss_li3 = criterion(out_li3, targets)
+    loss_li3 = criterion(out_ms, targets)
 
     print(f"Loss diff: {abs(loss_orig.item() - loss_li3.item()):.2e}")
 
@@ -122,26 +122,26 @@ def test_gradient_per_layer():
         ('conv1', 'conv1'),
     ]
 
-    for orig_name, li3_name in layers_to_check:
+    for orig_name, ms_name in layers_to_check:
         orig_layer = getattr(model_orig, orig_name)
-        li3_layer = getattr(model_linet, li3_name)
+        ms_layer = getattr(model_msnet, ms_name)
 
         orig_grads = []
-        li3_grads = []
+        ms_grads = []
 
         for name, param in orig_layer.named_parameters():
             if param.grad is not None:
                 orig_grads.append(param.grad.abs().mean().item())
 
-        for name, param in li3_layer.named_parameters():
+        for name, param in ms_layer.named_parameters():
             if param.grad is not None:
-                li3_grads.append(param.grad.abs().mean().item())
+                ms_grads.append(param.grad.abs().mean().item())
 
-        if orig_grads and li3_grads:
+        if orig_grads and ms_grads:
             orig_mean = sum(orig_grads) / len(orig_grads)
-            li3_mean = sum(li3_grads) / len(li3_grads)
-            diff = abs(orig_mean - li3_mean)
-            print(f"{orig_name}: Original mean grad={orig_mean:.2e}, LINet mean grad={li3_mean:.2e}, diff={diff:.2e}")
+            ms_mean = sum(ms_grads) / len(ms_grads)
+            diff = abs(orig_mean - ms_mean)
+            print(f"{orig_name}: Original mean grad={orig_mean:.2e}, MSNet mean grad={ms_mean:.2e}, diff={diff:.2e}")
 
 
 def test_specific_weight_gradients():
@@ -150,9 +150,9 @@ def test_specific_weight_gradients():
     print("Test: Specific Weight Gradient Comparison")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     torch.manual_seed(SEED)
     rgb = torch.randn(2, 3, 32, 32)
@@ -163,11 +163,11 @@ def test_specific_weight_gradients():
 
     # Forward
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb, depth])
+    out_ms = model_msnet([rgb, depth])
 
     # Loss
     loss_orig = criterion(out_orig, targets)
-    loss_li3 = criterion(out_li3, targets)
+    loss_li3 = criterion(out_ms, targets)
 
     # Backward
     loss_orig.backward()
@@ -178,39 +178,39 @@ def test_specific_weight_gradients():
 
     # stream1/0 weight
     orig_s1_grad = model_orig.conv1.stream1_weight.grad
-    li3_s0_grad = model_linet.conv1.stream_weights[0].grad
-    diff = (orig_s1_grad - li3_s0_grad).abs().max().item()
+    ms_s0_grad = model_msnet.conv1.stream_weights[0].grad
+    diff = (orig_s1_grad - ms_s0_grad).abs().max().item()
     print(f"stream1/0 weight grad max diff: {diff:.2e}")
     print(f"  Original mean: {orig_s1_grad.abs().mean().item():.2e}")
-    print(f"  LINet mean:   {li3_s0_grad.abs().mean().item():.2e}")
+    print(f"  MSNet mean:   {ms_s0_grad.abs().mean().item():.2e}")
 
     # stream2/1 weight
     orig_s2_grad = model_orig.conv1.stream2_weight.grad
-    li3_s1_grad = model_linet.conv1.stream_weights[1].grad
-    diff = (orig_s2_grad - li3_s1_grad).abs().max().item()
+    ms_s1_grad = model_msnet.conv1.stream_weights[1].grad
+    diff = (orig_s2_grad - ms_s1_grad).abs().max().item()
     print(f"\nstream2/1 weight grad max diff: {diff:.2e}")
     print(f"  Original mean: {orig_s2_grad.abs().mean().item():.2e}")
-    print(f"  LINet mean:   {li3_s1_grad.abs().mean().item():.2e}")
+    print(f"  MSNet mean:   {ms_s1_grad.abs().mean().item():.2e}")
 
     # integration weights
     orig_int_s1_grad = model_orig.conv1.integration_from_stream1.grad
-    li3_int_s0_grad = model_linet.conv1.integration_from_streams[0].grad
-    diff = (orig_int_s1_grad - li3_int_s0_grad).abs().max().item()
+    ms_int_s0_grad = model_msnet.conv1.integration_from_streams[0].grad
+    diff = (orig_int_s1_grad - ms_int_s0_grad).abs().max().item()
     print(f"\nintegration_from_stream1/0 grad max diff: {diff:.2e}")
     print(f"  Original mean: {orig_int_s1_grad.abs().mean().item():.2e}")
-    print(f"  LINet mean:   {li3_int_s0_grad.abs().mean().item():.2e}")
+    print(f"  MSNet mean:   {ms_int_s0_grad.abs().mean().item():.2e}")
 
     print("\n--- bn1 Weight Gradients ---")
     orig_bn_s1_grad = model_orig.bn1.stream1_weight.grad
-    li3_bn_s0_grad = model_linet.bn1.stream_weights[0].grad
-    diff = (orig_bn_s1_grad - li3_bn_s0_grad).abs().max().item()
+    ms_bn_s0_grad = model_msnet.bn1.stream_weights[0].grad
+    diff = (orig_bn_s1_grad - ms_bn_s0_grad).abs().max().item()
     print(f"stream1/0 BN weight grad max diff: {diff:.2e}")
 
     print("\n--- fc Weight Gradients ---")
     # fc is the final classifier
     orig_fc_grad = model_orig.fc.weight.grad
-    li3_fc_grad = model_linet.fc.weight.grad
-    diff = (orig_fc_grad - li3_fc_grad).abs().max().item()
+    ms_fc_grad = model_msnet.fc.weight.grad
+    diff = (orig_fc_grad - ms_fc_grad).abs().max().item()
     print(f"fc weight grad max diff: {diff:.2e}")
 
 
@@ -220,9 +220,9 @@ def test_integration_calculation():
     print("Test: Integration Calculation Comparison")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.eval()
-    model_linet.eval()
+    model_msnet.eval()
 
     torch.manual_seed(SEED)
     rgb = torch.randn(2, 3, 32, 32)
@@ -231,17 +231,17 @@ def test_integration_calculation():
     # Get conv1 outputs
     with torch.no_grad():
         s1_orig, s2_orig, int_orig = model_orig.conv1(rgb, depth, None)
-        s_li3, int_li3 = model_linet.conv1([rgb, depth], None)
+        s_li3, int_li3 = model_msnet.conv1([rgb, depth], None)
 
     # Check integration weights
     print("\n--- Integration Weights ---")
     orig_w1 = model_orig.conv1.integration_from_stream1
     orig_w2 = model_orig.conv1.integration_from_stream2
-    li3_w0 = model_linet.conv1.integration_from_streams[0]
-    li3_w1 = model_linet.conv1.integration_from_streams[1]
+    ms_w0 = model_msnet.conv1.integration_from_streams[0]
+    ms_w1 = model_msnet.conv1.integration_from_streams[1]
 
-    print(f"integration_from_stream1 diff: {(orig_w1 - li3_w0).abs().max().item():.2e}")
-    print(f"integration_from_stream2 diff: {(orig_w2 - li3_w1).abs().max().item():.2e}")
+    print(f"integration_from_stream1 diff: {(orig_w1 - ms_w0).abs().max().item():.2e}")
+    print(f"integration_from_stream2 diff: {(orig_w2 - ms_w1).abs().max().item():.2e}")
 
     # The integrated output should be:
     # int_out = W_int * prev_int + W1 * stream1 + W2 * stream2 + bias
@@ -250,11 +250,11 @@ def test_integration_calculation():
     print("\n--- Manual Integration Check ---")
 
     # Original computes: F.conv2d(stream1_out, W1) + F.conv2d(stream2_out, W2) + bias
-    # LINet computes: sum(F.conv2d(stream_out_raw[i], W[i])) + bias
+    # MSNet computes: sum(F.conv2d(stream_out_raw[i], W[i])) + bias
 
     # Check if Original uses stream_out (with bias) or stream_out_raw (without bias)
     print("\nOriginal model integration uses stream outputs WITH bias")
-    print("LINet model integration uses stream outputs WITHOUT bias (raw)")
+    print("MSNet model integration uses stream outputs WITHOUT bias (raw)")
     print("\nThis is a KEY DIFFERENCE that could cause divergence!")
 
 
@@ -265,17 +265,17 @@ def test_bias_in_integration():
     print("=" * 80)
 
     # Read the conv.py files to check integration implementation
-    print("\nOriginal LIConv2d._conv_forward integration:")
+    print("\nOriginal MSConv2d._conv_forward integration:")
     print("  integrated_from_s1 = F.conv2d(stream1_out, W1, None, ...)  # Uses stream1_out WITH bias")
     print("  integrated_from_s2 = F.conv2d(stream2_out, W2, None, ...)")
 
-    print("\nLINet LIConv2d._conv_forward integration:")
+    print("\nMSNet MSConv2d._conv_forward integration:")
     print("  for stream_out_raw, W in zip(stream_outputs_raw, integration_weights):")
     print("      F.conv2d(stream_out_raw, W, None, ...)  # Uses stream_out_raw WITHOUT bias")
 
     print("\n⚠️  POTENTIAL BUG: Integration calculation differs!")
     print("   Original integrates BIASED stream outputs")
-    print("   LINet integrates RAW (unbiased) stream outputs")
+    print("   MSNet integrates RAW (unbiased) stream outputs")
 
 
 if __name__ == "__main__":

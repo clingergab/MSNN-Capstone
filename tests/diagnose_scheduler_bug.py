@@ -230,7 +230,7 @@ def test_your_exact_config():
     history_learning_rates = []
 
     for epoch in range(10):  # 0-indexed like your code
-        # Step scheduler (like line 990 in li_net.py)
+        # Step scheduler (like line 990 in ms_net.py)
         scheduler.step()
 
         # Get current_lr (like line 991)

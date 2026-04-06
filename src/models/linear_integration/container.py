@@ -1,7 +1,7 @@
 """
 Linear Integration container modules for N-stream processing.
 
-Provides LISequential and LIReLU for managing N-stream operations.
+Provides MSSequential and MSReLU for managing N-stream operations.
 """
 
 import operator
@@ -19,12 +19,12 @@ from torch._jit_internal import _copy_to_script_wrapper
 
 
 __all__ = [
-    "LISequential",
-    "LIReLU",
+    "MSSequential",
+    "MSReLU",
 ]
 
 
-class LIReLU(nn.Module):
+class MSReLU(nn.Module):
     """
     Linear Integration ReLU activation function for N streams.
 
@@ -40,7 +40,7 @@ class LIReLU(nn.Module):
         - Integrated Output: Same shape as integrated input (or None)
 
     Examples::
-        >>> m = LIReLU()
+        >>> m = MSReLU()
         >>> stream_inputs = [torch.randn(2, 64, 28, 28) for _ in range(3)]
         >>> integrated_input = torch.randn(2, 64, 28, 28)
         >>> stream_outputs, integrated_output = m(stream_inputs, integrated_input)
@@ -82,22 +82,22 @@ class LIReLU(nn.Module):
         return inplace_str
 
 
-class LISequential(Module):
+class MSSequential(Module):
     r"""A linear integration sequential container for N-stream processing.
 
     Modules will be added to it in the order they are passed in the
     constructor. Alternatively, an ``OrderedDict`` of modules can be
-    passed in. The ``forward()`` method of ``LISequential`` accepts
+    passed in. The ``forward()`` method of ``MSSequential`` accepts
     stream_inputs (list[Tensor]) and integrated_input (Optional[Tensor])
     and forwards them through the contained modules.
 
-    LISequential is an extension of PyTorch's Sequential for N-stream processing.
+    MSSequential is an extension of PyTorch's Sequential for N-stream processing.
 
-    All modules within LISequential must support N-stream input/output:
+    All modules within MSSequential must support N-stream input/output:
     - Each module takes (stream_inputs: list[Tensor], integrated_input: Optional[Tensor])
     - Each module returns (stream_outputs: list[Tensor], integrated_output: Optional[Tensor])
 
-    This design maintains the clean N-stream architecture where LISequential
+    This design maintains the clean N-stream architecture where MSSequential
     extends nn.Sequential behavior to linear integration processing.
     """
 
@@ -130,7 +130,7 @@ class LISequential(Module):
         return next(islice(iterator, idx, None))
 
     @_copy_to_script_wrapper
-    def __getitem__(self, idx: Union[slice, int]) -> Union["LISequential", Module]:
+    def __getitem__(self, idx: Union[slice, int]) -> Union["MSSequential", Module]:
         if isinstance(idx, slice):
             return self.__class__(OrderedDict(list(self._modules.items())[idx]))
         else:
@@ -155,9 +155,9 @@ class LISequential(Module):
     def __len__(self) -> int:
         return len(self._modules)
 
-    def __add__(self, other) -> "LISequential":
-        if isinstance(other, LISequential):
-            ret = LISequential()
+    def __add__(self, other) -> "MSSequential":
+        if isinstance(other, MSSequential):
+            ret = MSSequential()
             for layer in self:
                 ret.append(layer)
             for layer in other:
@@ -166,7 +166,7 @@ class LISequential(Module):
         else:
             raise ValueError(
                 "add operator supports only objects "
-                f"of LISequential class, but {str(type(other))} is given."
+                f"of MSSequential class, but {str(type(other))} is given."
             )
 
     def pop(self, key: Union[int, slice]) -> Module:
@@ -175,7 +175,7 @@ class LISequential(Module):
         return v
 
     def __iadd__(self, other) -> Self:
-        if isinstance(other, LISequential):
+        if isinstance(other, MSSequential):
             offset = len(self)
             for i, module in enumerate(other):
                 self.add_module(str(i + offset), module)
@@ -183,10 +183,10 @@ class LISequential(Module):
         else:
             raise ValueError(
                 "add operator supports only objects "
-                f"of LISequential class, but {str(type(other))} is given."
+                f"of MSSequential class, but {str(type(other))} is given."
             )
 
-    def __mul__(self, other: int) -> "LISequential":
+    def __mul__(self, other: int) -> "MSSequential":
         if not isinstance(other, int):
             raise TypeError(
                 f"unsupported operand type(s) for *: {type(self)} and {type(other)}"
@@ -196,7 +196,7 @@ class LISequential(Module):
                 f"Non-positive multiplication factor {other} for {type(self)}"
             )
         else:
-            combined = LISequential()
+            combined = MSSequential()
             offset = 0
             for _ in range(other):
                 for module in self:
@@ -204,7 +204,7 @@ class LISequential(Module):
                     offset += 1
             return combined
 
-    def __rmul__(self, other: int) -> "LISequential":
+    def __rmul__(self, other: int) -> "MSSequential":
         return self.__mul__(other)
 
     def __imul__(self, other: int) -> Self:
@@ -247,8 +247,8 @@ class LISequential(Module):
         Each module must accept (stream_inputs, integrated_input, blanked_mask)
         and return (stream_outputs, integrated_output).
 
-        This ensures compatibility with LI modules like LIConv2d,
-        LIBatchNorm2d, LIReLU, etc.
+        This ensures compatibility with LI modules like MSConv2d,
+        MSBatchNorm2d, MSReLU, etc.
 
         Args:
             stream_inputs: List of input tensors for each stream
@@ -274,7 +274,7 @@ class LISequential(Module):
             stream_input = module.forward_stream(stream_idx, stream_input)
         return stream_input
 
-    def append(self, module: Module) -> "LISequential":
+    def append(self, module: Module) -> "MSSequential":
         r"""Append a given module to the end.
 
         Args:
@@ -283,7 +283,7 @@ class LISequential(Module):
         self.add_module(str(len(self)), module)
         return self
 
-    def insert(self, index: int, module: Module) -> "LISequential":
+    def insert(self, index: int, module: Module) -> "MSSequential":
         if not isinstance(module, Module):
             raise AssertionError(f"module should be of type: {Module}")
         n = len(self._modules)
@@ -296,7 +296,7 @@ class LISequential(Module):
         self._modules[str(index)] = module
         return self
 
-    def extend(self, sequential) -> "LISequential":
+    def extend(self, sequential) -> "MSSequential":
         for layer in sequential:
             self.append(layer)
         return self

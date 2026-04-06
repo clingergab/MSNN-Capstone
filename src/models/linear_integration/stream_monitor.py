@@ -1,5 +1,5 @@
 """
-Stream-specific monitoring utilities for Linear Integration Neural Networks (LINet).
+Stream-specific monitoring utilities for Linear Integration Neural Networks (MSNet).
 
 Provides tools to monitor individual stream learning, detect overfitting,
 and gain insights into N-stream behavior during training.
@@ -15,7 +15,7 @@ import re
 
 class StreamMonitor:
     """
-    Monitor individual stream behavior during LINet training.
+    Monitor individual stream behavior during MSNet training.
 
     Tracks:
     - Stream-specific gradients (N streams)
@@ -30,7 +30,7 @@ class StreamMonitor:
         Initialize stream monitor.
 
         Args:
-            model: The LINet model to monitor
+            model: The MSNet model to monitor
         """
         self.model = model
         self.history = defaultdict(list)
@@ -212,7 +212,7 @@ class StreamMonitor:
         """
         Compute overfitting indicators for each of the N streams separately.
 
-        For LINet: Tests individual stream pathways by running stream-specific forward passes.
+        For MSNet: Tests individual stream pathways by running stream-specific forward passes.
         This shows how well each stream has learned to extract useful features.
 
         Args:
@@ -398,7 +398,7 @@ class StreamMonitor:
 
         summary = []
         summary.append("=" * 70)
-        summary.append("LINet Stream Monitoring Summary")
+        summary.append("MSNet Stream Monitoring Summary")
         summary.append("=" * 70)
 
         # Gradient analysis
@@ -524,7 +524,7 @@ def create_stream_monitor(model: nn.Module) -> StreamMonitor:
     Factory function to create a StreamMonitor.
 
     Args:
-        model: The LINet model to monitor
+        model: The MSNet model to monitor
 
     Returns:
         StreamMonitor instance

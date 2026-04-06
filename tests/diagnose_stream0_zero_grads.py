@@ -12,8 +12,8 @@ from collections import defaultdict
 import sys
 sys.path.insert(0, '/Users/gclinger/Documents/projects/Multi-Stream-Neural-Networks')
 
-from models.linear_integration.li_net import LINet, li_resnet18
-from models.linear_integration.conv import LIConv2d
+from models.linear_integration.ms_net import MSNet, ms_resnet18
+from models.linear_integration.conv import MSConv2d
 
 
 def debug_stream_gradient_flow():
@@ -22,7 +22,7 @@ def debug_stream_gradient_flow():
     print("Debugging Stream0 Zero Gradient Issue")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.train()
 
@@ -75,7 +75,7 @@ def debug_integration_weights():
     print("Integration Weights Analysis")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.train()
 
@@ -109,7 +109,7 @@ def trace_forward_backward():
     print("=" * 80)
 
     # Create a minimal model - just conv1 and classifier
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.train()
 
@@ -169,7 +169,7 @@ def check_gradient_through_integration():
     int_weight_0 = torch.randn(out_ch, in_ch, 1, 1, requires_grad=True)
     int_weight_1 = torch.randn(out_ch, in_ch, 1, 1, requires_grad=True)
 
-    # Integration step (matching LINet logic)
+    # Integration step (matching MSNet logic)
     integrated_from_0 = F.conv2d(stream0_raw, int_weight_0, None, stride=1, padding=0)
     integrated_from_1 = F.conv2d(stream1_raw, int_weight_1, None, stride=1, padding=0)
 
@@ -224,18 +224,18 @@ def check_stream_weight_gradient_chain():
 
     if stream_weight.grad.norm().item() > 0:
         print("\n✓ Gradients DO flow through the full chain!")
-        print("  The issue must be specific to how LINet is structured...")
+        print("  The issue must be specific to how MSNet is structured...")
     else:
         print("\n⚠️ Gradients NOT flowing - there's a fundamental issue")
 
 
 def check_linet_conv1_specific():
-    """Check the specific structure of conv1 in LINet."""
+    """Check the specific structure of conv1 in MSNet."""
     print("\n" + "=" * 80)
-    print("LINet conv1 Specific Analysis")
+    print("MSNet conv1 Specific Analysis")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
 
     conv1 = model.conv1
@@ -272,7 +272,7 @@ def debug_actual_gradient_values():
     print("Actual Gradient Value Comparison")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.train()
 

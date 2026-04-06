@@ -5,10 +5,6 @@
 saved_models/
 
 # Large datasets
-data/MNIST/
-data/cifar-100/
-data/cifar-100-python/
-data/ImageNet/
 data/
 *.tar.gz
 *.zip

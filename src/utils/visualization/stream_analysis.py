@@ -1,5 +1,5 @@
 """
-Dataset-level stream analysis tools for LINet multi-stream neural networks.
+Dataset-level stream analysis tools for MSNet multi-stream neural networks.
 
 Provides stream redundancy analysis, per-class stream dominance,
 layer-wise train vs test activation divergence, BN stats reset experiments,
@@ -235,7 +235,7 @@ class StreamRedundancyAnalyzer:
 class PerClassDominanceAnalyzer:
     """Aggregate stream contribution dominance maps by ground-truth class.
 
-    Uses LIConv2d._capture_contributions to decompose per-stream contributions,
+    Uses MSConv2d._capture_contributions to decompose per-stream contributions,
     then aggregates mean contribution ratios per class across the dataset.
     """
 
@@ -563,8 +563,8 @@ def reset_bn_stats(
     for param in model.parameters():
         param.requires_grad_(False)
 
-    # Reset running stats for both standard BN and LINet's custom _LIBatchNorm modules.
-    # _LIBatchNorm inherits from _LINormBase (not nn.BatchNorm*), so we detect it
+    # Reset running stats for both standard BN and MSNet's custom _MSBatchNorm modules.
+    # _MSBatchNorm inherits from _MSNormBase (not nn.BatchNorm*), so we detect it
     # via the stream_num_features attribute unique to LI norm layers.
     for module in model.modules():
         if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):

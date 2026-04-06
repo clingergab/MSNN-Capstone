@@ -1,13 +1,13 @@
 """
-Diagnostic script to identify instability issues in LINet models.
+Diagnostic script to identify instability issues in MSNet models.
 
-This script can diagnose LINet (N-stream), original 2-stream, and Soma variants.
+This script can diagnose MSNet (N-stream), original 2-stream, and Soma variants.
 
 Usage:
-    python tests/diagnose_soma_instability.py              # Diagnose li_net vs original (default)
-    python tests/diagnose_soma_instability.py li_net      # Diagnose LINet vs original
-    python tests/diagnose_soma_instability.py original     # Diagnose original 2-stream vs LINet
-    python tests/diagnose_soma_instability.py soma         # Diagnose Soma vs LINet
+    python tests/diagnose_soma_instability.py              # Diagnose ms_net vs original (default)
+    python tests/diagnose_soma_instability.py ms_net      # Diagnose MSNet vs original
+    python tests/diagnose_soma_instability.py original     # Diagnose original 2-stream vs MSNet
+    python tests/diagnose_soma_instability.py soma         # Diagnose Soma vs MSNet
 
 Checks:
 1. Forward pass activation statistics (mean, std, min, max)
@@ -27,31 +27,31 @@ import numpy as np
 from collections import defaultdict
 
 # Import all models for comparison
-from models.linear_integration.li_net import LINet as LINet
-from models.linear_integration.blocks import LIBasicBlock as LIBasicBlock3
+from models.linear_integration.ms_net import MSNet as MSNet
+from models.linear_integration.blocks import MSBasicBlock as MSBasicBlock3
 
-from src.models.linear_integration.li_net_soma.li_net_soma import LINet as LINetSoma
-from src.models.linear_integration.li_net_soma.blocks import LIBasicBlock as LIBasicBlockSoma
+from src.models.linear_integration.ms_net_soma.ms_net_soma import MSNet as MSNetSoma
+from src.models.linear_integration.ms_net_soma.blocks import MSBasicBlock as MSBasicBlockSoma
 
-from src.models.linear_integration.li_net import LINet as LINetOriginal
-from src.models.linear_integration.blocks import LIBasicBlock as LIBasicBlockOriginal
+from src.models.linear_integration.ms_net import MSNet as MSNetOriginal
+from src.models.linear_integration.blocks import MSBasicBlock as MSBasicBlockOriginal
 
 # Parse command line argument for model selection
-DIAGNOSE_MODEL = "li_net"   # Default - diagnose li_net
+DIAGNOSE_MODEL = "ms_net"   # Default - diagnose ms_net
 COMPARE_MODEL = "original"   # Compare against original 2-stream
 if len(sys.argv) > 1:
     arg = sys.argv[1].lower()
-    if arg in ["li_net", "linet"]:
-        DIAGNOSE_MODEL = "li_net"
+    if arg in ["ms_net", "msnet"]:
+        DIAGNOSE_MODEL = "ms_net"
         COMPARE_MODEL = "original"
     elif arg in ["original", "2stream", "2-stream"]:
         DIAGNOSE_MODEL = "original"
-        COMPARE_MODEL = "li_net"
+        COMPARE_MODEL = "ms_net"
     elif arg in ["soma"]:
         DIAGNOSE_MODEL = "soma"
-        COMPARE_MODEL = "li_net"
+        COMPARE_MODEL = "ms_net"
     else:
-        print(f"Unknown model: {sys.argv[1]}. Use 'li_net', 'original', or 'soma'")
+        print(f"Unknown model: {sys.argv[1]}. Use 'ms_net', 'original', or 'soma'")
         sys.exit(1)
 
 # ============================================================================
@@ -76,11 +76,11 @@ def get_model_and_block(model_type=None):
         model_type = DIAGNOSE_MODEL
 
     if model_type == "soma":
-        return LINetSoma, LIBasicBlockSoma, "LINet Soma (GroupNorm on integrated)"
+        return MSNetSoma, MSBasicBlockSoma, "MSNet Soma (GroupNorm on integrated)"
     elif model_type == "original":
-        return LINetOriginal, LIBasicBlockOriginal, "Original 2-stream (integrates biased)"
-    else:  # li_net
-        return LINet, LIBasicBlock3, "LINet (BatchNorm, integrates raw)"
+        return MSNetOriginal, MSBasicBlockOriginal, "Original 2-stream (integrates biased)"
+    else:  # ms_net
+        return MSNet, MSBasicBlock3, "MSNet (BatchNorm, integrates raw)"
 
 
 def get_activation_stats(tensor, name=""):
@@ -169,23 +169,23 @@ def create_model(model_type, seed=SEED):
     torch.manual_seed(seed)
 
     if model_type == "original":
-        model = LINetOriginal(
-            block=LIBasicBlockOriginal,
+        model = MSNetOriginal(
+            block=MSBasicBlockOriginal,
             layers=[2, 2, 2, 2],
             num_classes=NUM_CLASSES,
             stream1_input_channels=3,
             stream2_input_channels=1,
         )
     elif model_type == "soma":
-        model = LINetSoma(
-            block=LIBasicBlockSoma,
+        model = MSNetSoma(
+            block=MSBasicBlockSoma,
             layers=[2, 2, 2, 2],
             num_classes=NUM_CLASSES,
             stream_input_channels=[3, 1],
         )
-    else:  # li_net
-        model = LINet(
-            block=LIBasicBlock3,
+    else:  # ms_net
+        model = MSNet(
+            block=MSBasicBlock3,
             layers=[2, 2, 2, 2],
             num_classes=NUM_CLASSES,
             stream_input_channels=[3, 1],
@@ -203,7 +203,7 @@ def create_model_input(model_type, seed=SEED):
         stream2 = torch.randn(BATCH_SIZE, 1, IMAGE_SIZE, IMAGE_SIZE, device='cpu')
         return (stream1, stream2)
     else:
-        # N-stream models (li_net, soma) expect a list
+        # N-stream models (ms_net, soma) expect a list
         return create_dummy_input(BATCH_SIZE, [3, 1], IMAGE_SIZE, device='cpu')
 
 
@@ -426,7 +426,7 @@ def test_integration_signals():
             ]
             stream_inputs = list(inputs)  # tuple to list
         else:
-            # N-stream models (li_net, soma)
+            # N-stream models (ms_net, soma)
             stream_weights_list = list(conv1.stream_weights)
             stream_biases_list = list(conv1.stream_biases) if conv1.stream_biases is not None else [None] * conv1.num_streams
             stream_inputs = inputs
@@ -469,7 +469,7 @@ def test_integration_signals():
                 print(f"\nIntegrated from stream {i}:")
                 print_stats(get_activation_stats(biased, "biased signal"), indent=1)
         else:
-            print("Note: LINet and Soma integrate RAW (no bias) outputs")
+            print("Note: MSNet and Soma integrate RAW (no bias) outputs")
             for i, raw in enumerate(stream_outputs_raw):
                 print(f"\nIntegrated from stream {i}:")
                 print_stats(get_activation_stats(raw, "raw signal"), indent=1)

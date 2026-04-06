@@ -14,11 +14,11 @@ output = activation(conv2d(input, filter) + bias)
 
 A convolutional layer is a collection of these neurons — one per output filter — each learning different weights to detect different features. The output of the layer is a stack of 2D feature maps.
 
-## How an MSNN Neuron Works (LIConv2d)
+## How an MSNN Neuron Works (MSConv2d)
 
 Our core idea: **each neuron has a separate, dedicated filter (weight) for each input modality**. Instead of one filter seeing a single fused input, the neuron maintains independent pathways that are integrated before activation.
 
-A single MSNN neuron (one output channel of `LIConv2d`) performs:
+A single MSNN neuron (one output channel of `MSConv2d`) performs:
 
 ### 1. Dendritic Filtering — Separate filter per modality
 
@@ -58,7 +58,7 @@ stream_output[i] = relu(dendritic_signal[i] + stream_bias[i])
 
 ## Side-by-Side Comparison
 
-| Concept | Standard CNN | MSNN (LIConv2d) |
+| Concept | Standard CNN | MSNN (MSConv2d) |
 |---|---|---|
 | Weights (filters) | 1 filter per neuron | N filters per neuron (1 per modality) |
 | What the filter sees | Single input tensor | One modality's input only |
@@ -76,11 +76,11 @@ stream_output[i] = relu(dendritic_signal[i] + stream_bias[i])
 
 ## Where This Lives in Code
 
-- **Separate filters:** `stream_weights` in `_LIConvNd.__init__` — one `Parameter` per stream, each with full kernel size (e.g. 3x3).
+- **Separate filters:** `stream_weights` in `_MSConvNd.__init__` — one `Parameter` per stream, each with full kernel size (e.g. 3x3).
 - **Integration weights:** `integration_from_streams` — learned 1x1 convs that mix each stream's raw output into the integrated signal.
 - **Integrated pathway:** `integrated_weight` — a 1x1 conv that carries forward the previous layer's integrated representation.
-- **Forward flow:** `LIConv2d._conv_forward` — filters each stream independently, then integrates raw outputs before bias/activation.
-- **Block-level activation:** `LIBasicBlock.forward` / `LIBottleneck.forward` — BN + ReLU applied after the conv+integration step.
+- **Forward flow:** `MSConv2d._conv_forward` — filters each stream independently, then integrates raw outputs before bias/activation.
+- **Block-level activation:** `MSBasicBlock.forward` / `MSBottleneck.forward` — BN + ReLU applied after the conv+integration step.
 
 ## Key Design Decisions
 

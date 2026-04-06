@@ -1,5 +1,5 @@
 """
-Linear Integration ResNet blocks for building LINet architectures.
+Linear Integration ResNet blocks for building MSNet architectures.
 """
 
 from typing import Callable, Optional
@@ -8,11 +8,11 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.nn import functional as F
-from .conv import LIConv2d, LIBatchNorm2d
-from .container import LIReLU
+from .conv import MSConv2d, MSBatchNorm2d
+from .container import MSReLU
 
 
-def li_conv3x3(
+def ms_conv3x3(
     stream_in_planes: list[int],
     stream_out_planes: list[int],
     integrated_in_planes: int,
@@ -20,9 +20,9 @@ def li_conv3x3(
     stride: int = 1,
     groups: int = 1,
     dilation: int = 1
-) -> LIConv2d:
+) -> MSConv2d:
     """3x3 linear integration convolution with padding."""
-    return LIConv2d(
+    return MSConv2d(
         stream_in_planes,
         stream_out_planes,
         integrated_in_planes,
@@ -36,15 +36,15 @@ def li_conv3x3(
     )
 
 
-def li_conv1x1(
+def ms_conv1x1(
     stream_in_planes: list[int],
     stream_out_planes: list[int],
     integrated_in_planes: int,
     integrated_out_planes: int,
     stride: int = 1
-) -> LIConv2d:
+) -> MSConv2d:
     """1x1 linear integration convolution."""
-    return LIConv2d(
+    return MSConv2d(
         stream_in_planes,
         stream_out_planes,
         integrated_in_planes,
@@ -55,12 +55,12 @@ def li_conv1x1(
     )
 
 
-class LIBasicBlock(nn.Module):
+class MSBasicBlock(nn.Module):
     """
     Linear Integration version of ResNet BasicBlock.
 
-    Uses unified LIConv2d neurons that process N streams simultaneously.
-    Integration happens INSIDE LIConv2d during convolution (not as separate step).
+    Uses unified MSConv2d neurons that process N streams simultaneously.
+    Integration happens INSIDE MSConv2d during convolution (not as separate step).
     """
 
     expansion: int = 1
@@ -80,19 +80,19 @@ class LIBasicBlock(nn.Module):
     ) -> None:
         super().__init__()
         if norm_layer is None:
-            norm_layer = LIBatchNorm2d
+            norm_layer = MSBatchNorm2d
         if groups != 1 or base_width != 64:
-            raise ValueError("LIBasicBlock only supports groups=1 and base_width=64")
+            raise ValueError("MSBasicBlock only supports groups=1 and base_width=64")
         if dilation > 1:
-            raise NotImplementedError("Dilation > 1 not supported in LIBasicBlock")
+            raise NotImplementedError("Dilation > 1 not supported in MSBasicBlock")
 
         # Store channel counts for output
         self.num_streams = len(stream_inplanes)
         self.stream_outplanes = [planes * self.expansion for planes in stream_planes]
         self.integrated_outplanes = integrated_planes * self.expansion
 
-        # Use unified LI neurons - integration happens inside LIConv2d!
-        self.conv1 = li_conv3x3(
+        # Use unified LI neurons - integration happens inside MSConv2d!
+        self.conv1 = ms_conv3x3(
             stream_inplanes,
             stream_planes,
             integrated_inplanes,
@@ -100,9 +100,9 @@ class LIBasicBlock(nn.Module):
             stride=stride
         )
         self.bn1 = norm_layer(stream_planes, integrated_planes)
-        self.relu = LIReLU(inplace=True)
+        self.relu = MSReLU(inplace=True)
 
-        self.conv2 = li_conv3x3(
+        self.conv2 = ms_conv3x3(
             stream_planes,
             stream_planes,
             integrated_planes,
@@ -121,9 +121,9 @@ class LIBasicBlock(nn.Module):
         blanked_mask: Optional[dict[int, Tensor]] = None
     ) -> tuple[list[Tensor], Tensor]:
         """
-        Forward pass - MUCH SIMPLER with unified LIConv2d neurons!
+        Forward pass - MUCH SIMPLER with unified MSConv2d neurons!
 
-        The integration now happens INSIDE LIConv2d, so this block
+        The integration now happens INSIDE MSConv2d, so this block
         just needs to do: conv → bn → relu → residual (ResNet pattern)
 
         Args:
@@ -159,7 +159,7 @@ class LIBasicBlock(nn.Module):
             stream_outputs, integrated = self.bn2(stream_outputs, integrated, blanked_mask)
 
             # Apply downsampling to identities if needed (handles all N streams together)
-            # Downsample is an LISequential containing LIConv2d + LIBatchNorm2d - accepts blanked_mask
+            # Downsample is an MSSequential containing MSConv2d + MSBatchNorm2d - accepts blanked_mask
             if self.downsample is not None:
                 stream_identities, integrated_identity = self.downsample(
                     stream_identities, integrated_identity, blanked_mask
@@ -202,12 +202,12 @@ class LIBasicBlock(nn.Module):
         return out
 
 
-class LIBottleneck(nn.Module):
+class MSBottleneck(nn.Module):
     """
     Linear Integration version of ResNet Bottleneck block.
 
-    Uses unified LIConv2d neurons that process N streams simultaneously.
-    Integration happens INSIDE LIConv2d during convolution (not as separate step).
+    Uses unified MSConv2d neurons that process N streams simultaneously.
+    Integration happens INSIDE MSConv2d during convolution (not as separate step).
 
     Note: Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
     while original implementation places the stride at the first 1x1 convolution(self.conv1)
@@ -233,7 +233,7 @@ class LIBottleneck(nn.Module):
     ) -> None:
         super().__init__()
         if norm_layer is None:
-            norm_layer = LIBatchNorm2d
+            norm_layer = MSBatchNorm2d
 
         # Calculate intermediate width for all pathways
         stream_widths = [int(planes * (base_width / 64.0)) * groups for planes in stream_planes]
@@ -244,15 +244,15 @@ class LIBottleneck(nn.Module):
         self.stream_outplanes = [planes * self.expansion for planes in stream_planes]
         self.integrated_outplanes = integrated_planes * self.expansion
 
-        # Use unified LI neurons - integration happens inside LIConv2d!
-        self.conv1 = li_conv1x1(
+        # Use unified LI neurons - integration happens inside MSConv2d!
+        self.conv1 = ms_conv1x1(
             stream_inplanes,
             stream_widths,
             integrated_inplanes,
             integrated_width
         )
         self.bn1 = norm_layer(stream_widths, integrated_width)
-        self.conv2 = li_conv3x3(
+        self.conv2 = ms_conv3x3(
             stream_widths,
             stream_widths,
             integrated_width,
@@ -260,14 +260,14 @@ class LIBottleneck(nn.Module):
             stride, groups, dilation
         )
         self.bn2 = norm_layer(stream_widths, integrated_width)
-        self.conv3 = li_conv1x1(
+        self.conv3 = ms_conv1x1(
             stream_widths,
             self.stream_outplanes,
             integrated_width,
             self.integrated_outplanes
         )
         self.bn3 = norm_layer(self.stream_outplanes, self.integrated_outplanes)
-        self.relu = LIReLU(inplace=True)
+        self.relu = MSReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
         self.skip_stream_tail = False
@@ -315,7 +315,7 @@ class LIBottleneck(nn.Module):
             stream_outputs, integrated = self.bn3(stream_outputs, integrated, blanked_mask)
 
             # Apply downsampling to identities if needed (handles all N streams together)
-            # Downsample is an LISequential containing LIConv2d + LIBatchNorm2d - accepts blanked_mask
+            # Downsample is an MSSequential containing MSConv2d + MSBatchNorm2d - accepts blanked_mask
             if self.downsample is not None:
                 stream_identities, integrated_identity = self.downsample(
                     stream_identities, integrated_identity, blanked_mask

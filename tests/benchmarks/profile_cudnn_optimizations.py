@@ -1,5 +1,5 @@
 """
-Profile channels_last optimization for LINet.
+Profile channels_last optimization for MSNet.
 
 Benchmarks two configurations to measure the effect of channels_last:
 1. BASELINE  — NCHW format, sequential per-stream conv (original)
@@ -54,10 +54,10 @@ def set_channels_last(enabled: bool = True):
 # ============================================================================
 
 def create_model(channels_last: bool = True):
-    """Create a fresh LINet ResNet-18 model in training mode."""
-    from models.linear_integration.li_net import li_resnet18
+    """Create a fresh MSNet ResNet-18 model in training mode."""
+    from models.linear_integration.ms_net import ms_resnet18
 
-    model = li_resnet18(
+    model = ms_resnet18(
         num_classes=NUM_CLASSES,
         stream_input_channels=STREAM_INPUT_CHANNELS,
         dropout_p=0.5,
@@ -206,7 +206,7 @@ CONFIGS = {
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Profile channels_last optimization for LINet")
+    parser = argparse.ArgumentParser(description="Profile channels_last optimization for MSNet")
     parser.add_argument("--mode", choices=["all", "baseline", "cl_only"], default="all",
                         help="Which config(s) to profile (default: both)")
     parser.add_argument("--warmup", type=int, default=5,

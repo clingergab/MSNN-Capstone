@@ -1,4 +1,4 @@
-# LINet (Linear Integration Network) Design Plan
+# MSNet (Linear Integration Network) Design Plan
 
 **Model Type**: 3-Stream Unified Neuron Architecture
 **Status**: Design Finalized - Ready for Implementation
@@ -8,7 +8,7 @@
 
 ## **Executive Summary**
 
-LINet implements a **unified neuron architecture** where each computational unit (LIConv2d) processes THREE streams simultaneously:
+MSNet implements a **unified neuron architecture** where each computational unit (MSConv2d) processes THREE streams simultaneously:
 - **stream1** (RGB): Independent pathway
 - **stream2** (Depth): Independent pathway
 - **integrated**: Learned fusion pathway (combines stream1 + stream2 outputs)
@@ -17,10 +17,10 @@ LINet implements a **unified neuron architecture** where each computational unit
 
 ```
 Traditional View (WRONG):
-    "LINet has 3 separate neuron types that need to communicate"
+    "MSNet has 3 separate neuron types that need to communicate"
 
 Unified View (CORRECT):
-    "LINet has ONE neuron type (LIConv2d) that handles 3 streams"
+    "MSNet has ONE neuron type (MSConv2d) that handles 3 streams"
 ```
 
 ### **Natural Progression:**
@@ -29,7 +29,7 @@ Unified View (CORRECT):
 |-------|-------------|-------|--------|-----------|
 | **ResNet** | Conv2d | `x` | `y` | - |
 | **MCResNet** | MCConv2d | `(xa, xb)` | `(ya, yb)` | Extends Conv2d: 1→2 streams |
-| **LINet** | LIConv2d | `(xa, xb, xc)` | `(ya, yb, yc)` | Extends MCConv2d: 2→3 streams |
+| **MSNet** | MSConv2d | `(xa, xb, xc)` | `(ya, yb, yc)` | Extends MCConv2d: 2→3 streams |
 
 **Integration is built INTO the neuron, not added after!**
 
@@ -38,12 +38,12 @@ Unified View (CORRECT):
 ## 1. Overview
 
 ### 1.1 Core Concept
-LINet extends MCResNet by implementing **3-stream unified neurons** (LIConv2d) that process RGB, Depth, and Integrated streams simultaneously within each computational unit.
+MSNet extends MCResNet by implementing **3-stream unified neurons** (MSConv2d) that process RGB, Depth, and Integrated streams simultaneously within each computational unit.
 
 **Key Innovation**:
 - **Unified neuron architecture** - Each layer processes all 3 streams in a single computational unit
 - **Integration during convolution** - Not a separate step, but built into the neuron itself
-- **Natural extension** - Just as MCConv2d extends Conv2d from 1→2 streams, LIConv2d extends MCConv2d from 2→3 streams
+- **Natural extension** - Just as MCConv2d extends Conv2d from 1→2 streams, MSConv2d extends MCConv2d from 2→3 streams
 
 ### 1.2 Architectural Progression
 
@@ -62,8 +62,8 @@ MCResNet (2 streams):
 
     ✓ ONE neuron handling TWO streams
 
-LINet (3 streams):
-    LIConv2d = 3-stream unified neuron
+MSNet (3 streams):
+    MSConv2d = 3-stream unified neuron
     Input:  xa, xb, xc
     Weights: wa, wb, wc, wc_from_a, wc_from_b
     Output: ya = conv(xa, wa)
@@ -75,9 +75,9 @@ LINet (3 streams):
 
 ### 1.3 Architecture Comparison
 
-| Feature | MCResNet | LINet |
+| Feature | MCResNet | MSNet |
 |---------|----------|-------|
-| **Neuron Type** | MCConv2d (2-stream) | LIConv2d (3-stream) |
+| **Neuron Type** | MCConv2d (2-stream) | MSConv2d (3-stream) |
 | **Streams** | 2 (stream1, stream2) | 3 (stream1, stream2, integrated) |
 | **Neuron Abstraction** | ONE neuron, 2 streams | ONE neuron, 3 streams |
 | **Block Output** | `(s1, s2)` | `(s1, s2, integrated)` |
@@ -150,7 +150,7 @@ Predictions
 
 ### **Key Concept: Unified Neurons**
 
-In LINet, we extend the MCResNet neuron abstraction from 2 streams to 3 streams:
+In MSNet, we extend the MCResNet neuron abstraction from 2 streams to 3 streams:
 
 ```
 MCConv2d (2-stream neuron):
@@ -165,9 +165,9 @@ MCConv2d (2-stream neuron):
     │  Output: ya, yb                 │
     └─────────────────────────────────┘
 
-LIConv2d (3-stream neuron):
+MSConv2d (3-stream neuron):
     ┌─────────────────────────────────┐
-    │      LIConv2d                   │
+    │      MSConv2d                   │
     │                                 │
     │  Input:  xa, xb, xc             │
     │  Weights: wa, wb, wc            │
@@ -181,13 +181,13 @@ LIConv2d (3-stream neuron):
     └─────────────────────────────────┘
 ```
 
-### 3.1 LIConv2d (3-Stream Unified Neuron)
+### 3.1 MSConv2d (3-Stream Unified Neuron)
 
 **Purpose**: Extend MCConv2d to process THREE streams in a single computational unit.
 
 **Complete Implementation**:
 ```python
-class LIConv2d(nn.Module):
+class MSConv2d(nn.Module):
     """
     Linear Integration Convolution - 3-stream unified neuron.
 
@@ -372,9 +372,9 @@ class LIConv2d(nn.Module):
 
 Before building blocks, we need supporting components that handle 3 streams:
 
-#### **LIBatchNorm2d**
+#### **MSBatchNorm2d**
 ```python
-class LIBatchNorm2d(nn.Module):
+class MSBatchNorm2d(nn.Module):
     """Batch normalization for 3 streams."""
 
     def __init__(self, stream1_channels, stream2_channels, integrated_channels, ...):
@@ -397,9 +397,9 @@ class LIBatchNorm2d(nn.Module):
         return stream1_out, stream2_out, integrated_out
 ```
 
-#### **LIReLU**
+#### **MSReLU**
 ```python
-class LIReLU(nn.Module):
+class MSReLU(nn.Module):
     """ReLU activation for 3 streams."""
 
     def __init__(self, inplace=True):
@@ -418,9 +418,9 @@ class LIReLU(nn.Module):
         return stream1_out, stream2_out, integrated_out
 ```
 
-#### **LISequential**
+#### **MSSequential**
 ```python
-class LISequential(nn.Module):
+class MSSequential(nn.Module):
     """Sequential container for LI layers."""
 
     def __init__(self, *args):
@@ -438,15 +438,15 @@ class LISequential(nn.Module):
 
 ---
 
-### 3.3 LIBasicBlock
+### 3.3 MSBasicBlock
 
-**Purpose**: ResNet BasicBlock using unified 3-stream neurons (LIConv2d).
+**Purpose**: ResNet BasicBlock using unified 3-stream neurons (MSConv2d).
 
-**Key Simplification**: With unified LIConv2d neurons, LIBasicBlock is **almost identical** to MCBasicBlock, just using LIConv2d instead of MCConv2d and handling 3 streams instead of 2.
+**Key Simplification**: With unified MSConv2d neurons, MSBasicBlock is **almost identical** to MCBasicBlock, just using MSConv2d instead of MCConv2d and handling 3 streams instead of 2.
 
 **Complete Forward Pass**:
 ```python
-class LIBasicBlock(nn.Module):
+class MSBasicBlock(nn.Module):
     expansion = 1
 
     def __init__(
@@ -466,18 +466,18 @@ class LIBasicBlock(nn.Module):
     ):
         super().__init__()
         if norm_layer is None:
-            norm_layer = LIBatchNorm2d
+            norm_layer = MSBatchNorm2d
 
         # Use unified LI neurons instead of MC neurons
-        self.conv1 = LIConv2d(
+        self.conv1 = MSConv2d(
             stream1_inplanes, stream2_inplanes, integrated_inplanes,
             stream1_planes, stream2_planes, stream1_planes,
             kernel_size=3, stride=stride, padding=1, bias=False
         )
         self.bn1 = norm_layer(stream1_planes, stream2_planes, stream1_planes)
-        self.relu = LIReLU(inplace=True)
+        self.relu = MSReLU(inplace=True)
 
-        self.conv2 = LIConv2d(
+        self.conv2 = MSConv2d(
             stream1_planes, stream2_planes, stream1_planes,
             stream1_planes, stream2_planes, stream1_planes,
             kernel_size=3, stride=1, padding=1, bias=False
@@ -490,9 +490,9 @@ class LIBasicBlock(nn.Module):
 
     def forward(self, stream1_input, stream2_input, integrated_input=None):
         """
-        Forward pass - MUCH SIMPLER with unified LIConv2d neurons!
+        Forward pass - MUCH SIMPLER with unified MSConv2d neurons!
 
-        The integration now happens INSIDE LIConv2d, so this block
+        The integration now happens INSIDE MSConv2d, so this block
         just needs to do: conv → bn → relu → residual (ResNet pattern)
         """
         # Save identities
@@ -500,12 +500,12 @@ class LIBasicBlock(nn.Module):
         stream2_identity = stream2_input
         integrated_identity = integrated_input
 
-        # First conv block (integration happens inside LIConv2d!)
+        # First conv block (integration happens inside MSConv2d!)
         s1, s2, ic = self.conv1(stream1_input, stream2_input, integrated_input)
         s1, s2, ic = self.bn1(s1, s2, ic)
         s1, s2, ic = self.relu(s1, s2, ic)
 
-        # Second conv block (integration happens inside LIConv2d!)
+        # Second conv block (integration happens inside MSConv2d!)
         s1, s2, ic = self.conv2(s1, s2, ic)
         s1, s2, ic = self.bn2(s1, s2, ic)
 
@@ -528,16 +528,16 @@ class LIBasicBlock(nn.Module):
 ```
 
 **Key Simplifications**:
-1. ✅ **No separate integration step** - happens inside LIConv2d
+1. ✅ **No separate integration step** - happens inside MSConv2d
 2. ✅ **Follows exact ResNet pattern** - conv → bn → residual → relu
 3. ✅ **Clean 3-tuple handling** - all operations work on `(s1, s2, ic)`
 4. ✅ **Parallel to MCBasicBlock** - same structure, just 3 streams instead of 2
 
 ---
 
-### 3.3 LIBottleneck
+### 3.3 MSBottleneck
 
-**Same as LIBasicBlock but**:
+**Same as MSBasicBlock but**:
 - Three convolutions per stream (1x1 → 3x3 → 1x1)
 - expansion = 4
 - Used in ResNet50+
@@ -547,13 +547,13 @@ class LIBasicBlock(nn.Module):
 
 ---
 
-### 3.4 LISequential
+### 3.4 MSSequential
 
 **Purpose**: Container for sequence of LI blocks, handles 3-tuple forwarding.
 
 **Design**:
 ```python
-class LISequential(nn.Module):
+class MSSequential(nn.Module):
     def __init__(self, *args):
         self.layers = nn.ModuleList(args)
 
@@ -576,7 +576,7 @@ class LISequential(nn.Module):
 
 ---
 
-### 3.5 LIResNet (Main Model)
+### 3.5 MSResNet (Main Model)
 
 **Inherits from**: `BaseModel` (like MCResNet does)
 
@@ -602,7 +602,7 @@ class LISequential(nn.Module):
 ```python
 def _build_network(
     self,
-    block: type[Union[LIBasicBlock, LIBottleneck]],
+    block: type[Union[MSBasicBlock, MSBottleneck]],
     layers: list[int],
     replace_stride_with_dilation: list[bool]
 ):
@@ -644,13 +644,13 @@ def _build_network(
 ```python
 def _make_layer(
     self,
-    block: type[Union[LIBasicBlock, LIBottleneck]],
+    block: type[Union[MSBasicBlock, MSBottleneck]],
     stream1_planes: int,
     stream2_planes: int,
     blocks: int,
     stride: int = 1,
     dilate: bool = False,
-) -> LISequential:
+) -> MSSequential:
     """
     Create a layer composed of multiple LI blocks.
     Manages three-stream channel tracking and downsampling.
@@ -728,7 +728,7 @@ def _make_layer(
             )
         )
 
-    return LISequential(*layers)
+    return MSSequential(*layers)
 ```
 
 #### **Complete forward() Implementation**:
@@ -776,7 +776,7 @@ def forward(self, stream1_input: Tensor, stream2_input: Tensor) -> Tensor:
 def __init__(self, block, layers, num_classes, ...,
              stream1_input_channels=3, stream2_input_channels=1,
              dropout_p=0.0, **kwargs):
-    # Store LIResNet-specific parameters BEFORE super().__init__()
+    # Store MSResNet-specific parameters BEFORE super().__init__()
     self.stream1_input_channels = stream1_input_channels
     self.stream2_input_channels = stream2_input_channels
     self.dropout_p = dropout_p
@@ -800,9 +800,9 @@ src/models/
 ├── linear_integration/          # NEW FOLDER
 │   ├── __init__.py             # Export factory functions
 │   ├── integration.py          # IntegrationLayer
-│   ├── li_blocks.py            # LIBasicBlock, LIBottleneck
-│   ├── li_container.py         # LISequential
-│   └── li_resnet.py            # LIResNet, factory functions
+│   ├── ms_blocks.py            # MSBasicBlock, MSBottleneck
+│   ├── ms_container.py         # MSSequential
+│   └── ms_resnet.py            # MSResNet, factory functions
 │
 ├── multi_channel/              # REUSE (no changes)
 │   ├── conv.py                 # MCConv2d, MCBatchNorm2d
@@ -821,20 +821,20 @@ src/models/
 ### Phase 1: Core Integration Components
 - [ ] Create `src/models/linear_integration/` folder
 - [ ] Implement `IntegrationLayer` in `integration.py`
-- [ ] Implement `LISequential` in `li_container.py`
+- [ ] Implement `MSSequential` in `ms_container.py`
 - [ ] Unit tests for both components
 
 ### Phase 2: Building Blocks
-- [ ] Implement `LIBasicBlock` in `li_blocks.py`
-- [ ] Implement `LIBottleneck` in `li_blocks.py`
+- [ ] Implement `MSBasicBlock` in `ms_blocks.py`
+- [ ] Implement `MSBottleneck` in `ms_blocks.py`
 - [ ] Unit tests with mock inputs
 - [ ] Verify gradient flow
 
 ### Phase 3: Main Model
-- [ ] Implement `LIResNet` in `li_resnet.py`
+- [ ] Implement `MSResNet` in `ms_resnet.py`
 - [ ] Override `_build_network()` for 3-stream architecture
 - [ ] Override `forward()` for integrated stream prediction
-- [ ] Add factory functions (li_resnet18, li_resnet34, li_resnet50)
+- [ ] Add factory functions (ms_resnet18, ms_resnet34, ms_resnet50)
 - [ ] Update `__init__.py`
 
 ### Phase 4: Testing
@@ -852,7 +852,7 @@ src/models/
 - stream2 pathway: 11.7M
 - classifier: 0.04M (1024 → num_classes)
 
-### LIResNet18: ~27.4M (estimated)
+### MSResNet18: ~27.4M (estimated)
 - stream1 pathway: 11.7M
 - stream2 pathway: 11.7M
 - **integration layers: +4.2M**
@@ -884,7 +884,7 @@ src/models/
 **Q3: When to start integration?**
 - ✓ **DECISION**: Option B - Start at layer1 block1 with `integrated=None`
 - **Reason**: Simpler architecture, no extra initial integration layer needed
-- **Implementation**: First LIBasicBlock receives `integrated_input=None`, creates it via `integration_first`
+- **Implementation**: First MSBasicBlock receives `integrated_input=None`, creates it via `integration_first`
 
 **Q4: Integration layer architecture**
 - ✓ **DECISION**: Option A - Conv2d(kernel_size=1, bias=False) + BatchNorm2d + ReLU
@@ -928,7 +928,7 @@ src/models/
 ## 8. Expected Benefits
 
 ### vs MCResNet
-| Metric | MCResNet | LIResNet | Improvement |
+| Metric | MCResNet | MSResNet | Improvement |
 |--------|----------|----------|-------------|
 | Accuracy | 64-65% | 66-69% | +2-4% |
 | Cross-modal learning | ✗ | ✓ | Throughout depth |
@@ -968,9 +968,9 @@ def test_integration_layer():
     out = layer(s1, s2, prev)
     assert out.shape == (2, 64, 28, 28)
 
-# Test LIBasicBlock
-def test_li_basic_block():
-    block = LIBasicBlock(64, 64, 64, 64, 64)
+# Test MSBasicBlock
+def test_ms_basic_block():
+    block = MSBasicBlock(64, 64, 64, 64, 64)
     s1 = torch.randn(2, 64, 28, 28)
     s2 = torch.randn(2, 64, 28, 28)
     prev = torch.randn(2, 64, 28, 28)
@@ -983,8 +983,8 @@ def test_li_basic_block():
 
 ### Integration Tests
 ```python
-def test_li_resnet18_forward():
-    model = li_resnet18(num_classes=40)
+def test_ms_resnet18_forward():
+    model = ms_resnet18(num_classes=40)
     rgb = torch.randn(2, 3, 224, 224)
     depth = torch.randn(2, 1, 224, 224)
 
@@ -992,7 +992,7 @@ def test_li_resnet18_forward():
     assert output.shape == (2, 40)
 
 def test_parameter_count():
-    model = li_resnet18(num_classes=40)
+    model = ms_resnet18(num_classes=40)
     total_params = sum(p.numel() for p in model.parameters())
     expected = 27_400_000  # ~27.4M
     assert abs(total_params - expected) / expected < 0.05  # Within 5%
@@ -1001,7 +1001,7 @@ def test_parameter_count():
 ### Training Test
 ```python
 def test_training_convergence():
-    model = li_resnet18(num_classes=10)
+    model = ms_resnet18(num_classes=10)
     model.compile(optimizer='adam', loss='cross_entropy', lr=0.001)
 
     # Train on small batch for 5 epochs
@@ -1023,7 +1023,7 @@ After successful implementation and testing:
    - Compare 1x1 vs 3x3 integration convs
 
 2. **Scale to larger models**:
-   - li_resnet50, li_resnet101
+   - ms_resnet50, ms_resnet101
 
 3. **Alternative integration strategies**:
    - Attention-based integration
@@ -1057,7 +1057,7 @@ After successful implementation and testing:
 - ✓ Resolved all open design questions (Q1-Q10)
 - ✓ Added complete implementation specifications
 - ✓ Removed initial integration layer (start with `integrated=None`)
-- ✓ Fixed LIBasicBlock forward pass order (residual→relu→integrate)
+- ✓ Fixed MSBasicBlock forward pass order (residual→relu→integrate)
 - ✓ Added IntegrationLayer complete forward() with ReLU
 - ✓ Added _make_layer() implementation for 3-stream tracking
 - ✓ Specified use of `nn.AdaptiveAvgPool2d` for integrated stream
@@ -1065,12 +1065,12 @@ After successful implementation and testing:
 
 **2025-10-11 (Update 2 - MAJOR REVISION)**: Unified neuron architecture
 - ✓ **Completely redesigned with unified neuron concept**
-- ✓ **LIConv2d as 3-stream unified neuron** (not separate IntegrationLayer)
-- ✓ **Key insight**: MCConv2d is ONE neuron handling 2 streams, LIConv2d is ONE neuron handling 3 streams
-- ✓ **Integration happens INSIDE LIConv2d** (during convolution, not separate step)
-- ✓ **Much simpler architecture**: Natural extension from Conv2d → MCConv2d → LIConv2d
+- ✓ **MSConv2d as 3-stream unified neuron** (not separate IntegrationLayer)
+- ✓ **Key insight**: MCConv2d is ONE neuron handling 2 streams, MSConv2d is ONE neuron handling 3 streams
+- ✓ **Integration happens INSIDE MSConv2d** (during convolution, not separate step)
+- ✓ **Much simpler architecture**: Natural extension from Conv2d → MCConv2d → MSConv2d
 - ✓ **Corrected parameter count**: 1.6× MCConv2d (not 9×!)
-- ✓ **LIBasicBlock greatly simplified**: Just uses LIConv2d neurons, follows exact ResNet pattern
+- ✓ **MSBasicBlock greatly simplified**: Just uses MSConv2d neurons, follows exact ResNet pattern
 - ✓ **Architectural progression clearly documented**: 1-stream → 2-stream → 3-stream neurons
 - ✓ Ready for implementation with correct mental model
 
@@ -1087,7 +1087,7 @@ conv1 → bn1 → relu → conv2 → bn2 → RESIDUAL → RELU → integrate
 
 ### **Rule 2: No Initial Integration**
 - Start with `integrated=None`
-- First LIBasicBlock creates integrated stream via `integration_first`
+- First MSBasicBlock creates integrated stream via `integration_first`
 - Simplifies architecture, matches ResNet's progressive refinement
 
 ### **Rule 3: 3-Stream Channel Tracking**
@@ -1096,7 +1096,7 @@ conv1 → bn1 → relu → conv2 → bn2 → RESIDUAL → RELU → integrate
 self.stream1_inplanes = 64
 self.stream2_inplanes = 64
 
-# LIResNet adds (in _build_network):
+# MSResNet adds (in _build_network):
 self.integrated_inplanes = 64
 
 # _make_layer() updates ALL THREE after each layer:
@@ -1137,11 +1137,11 @@ When `stride != 1` or channels change:
 ## Next Steps
 
 1. ✓ **Design finalized** - All architectural decisions made
-2. **Begin Phase 1 implementation** - IntegrationLayer + LISequential
-3. **Continue Phase 2** - LIBasicBlock + LIBottleneck
-4. **Continue Phase 3** - LIResNet main model
+2. **Begin Phase 1 implementation** - IntegrationLayer + MSSequential
+3. **Continue Phase 2** - MSBasicBlock + MSBottleneck
+4. **Continue Phase 3** - MSResNet main model
 5. **Run tests** - Validate against design specifications
 
 ---
 
-*This document now serves as the complete architectural specification for LINet implementation.*
+*This document now serves as the complete architectural specification for MSNet implementation.*

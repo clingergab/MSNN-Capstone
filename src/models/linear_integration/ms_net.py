@@ -1,5 +1,5 @@
 """
-Linear Integration ResNet (LINet) implementations.
+Linear Integration ResNet (MSNet) implementations.
 
 Supports N input streams with a learned integrated pathway.
 Designed for flexibility - works with any number of streams (N=1, 2, 3, ...).
@@ -49,22 +49,22 @@ except:
 
 # Import the linear integration components
 from . import conv as _conv_module
-from .conv import LIConv2d, LIBatchNorm2d
-from .blocks import LIBasicBlock, LIBottleneck
-from .container import LISequential, LIReLU
-from .pooling import LIMaxPool2d, LIAdaptiveAvgPool2d
-# Note: LINet doesn't use fusion - it uses the integrated stream directly
+from .conv import MSConv2d, MSBatchNorm2d
+from .blocks import MSBasicBlock, MSBottleneck
+from .container import MSSequential, MSReLU
+from .pooling import MSMaxPool2d, MSAdaptiveAvgPool2d
+# Note: MSNet doesn't use fusion - it uses the integrated stream directly
 
 
-class LINet(BaseModel):
+class MSNet(BaseModel):
     """
-    Linear Integration ResNet (LINet) implementation.
+    Linear Integration ResNet (MSNet) implementation.
 
     Supports N input streams with a learned integrated pathway:
     - N independent stream pathways (e.g., RGB, Depth, Orthogonal, etc.)
     - Integrated: Learned fusion pathway (combines stream outputs during convolution)
 
-    Uses unified LIConv2d neurons where integration happens INSIDE the neuron.
+    Uses unified MSConv2d neurons where integration happens INSIDE the neuron.
     Final predictions come from the integrated stream (no separate fusion layer needed).
 
     Designed for flexibility - works with any number of streams (N=1, 2, 3, ...):
@@ -75,7 +75,7 @@ class LINet(BaseModel):
 
     def __init__(
         self,
-        block: type[Union[LIBasicBlock, LIBottleneck]],
+        block: type[Union[MSBasicBlock, MSBottleneck]],
         layers: list[int],
         num_classes: int,
         zero_init_residual: bool = False,
@@ -85,22 +85,22 @@ class LINet(BaseModel):
         norm_layer: Optional[Callable[..., nn.Module]] = None,
         device: Optional[str] = None,
         use_amp: bool = False,
-        # LINet-specific parameters come AFTER all ResNet parameters
+        # MSNet-specific parameters come AFTER all ResNet parameters
         stream_input_channels: list[int] = [3, 1],  # Default: [RGB=3, Depth=1] for backward compatibility
         dropout_p: float = 0.0,  # Dropout probability (0.0 = no dropout, 0.5 = 50% dropout)
         width_multiplier: float = 1.0,  # Scale channel widths (0.5 = half, 0.75 = 3/4)
         **kwargs
     ) -> None:
-        # Store LINet-specific parameters BEFORE calling super().__init__
+        # Store MSNet-specific parameters BEFORE calling super().__init__
         # because _build_network() (called by super()) needs these attributes
         self.stream_input_channels = stream_input_channels
         self.num_streams = len(stream_input_channels)
         self.dropout_p = dropout_p
         self.width_multiplier = width_multiplier
 
-        # Set LINet default norm layer if not specified
+        # Set MSNet default norm layer if not specified
         if norm_layer is None:
-            norm_layer = LIBatchNorm2d
+            norm_layer = MSBatchNorm2d
 
         # Initialize BaseModel with all ResNet-compatible parameters in exact order
         # BaseModel will handle all the standard ResNet setup (device, inplanes, dilation, etc.)
@@ -128,7 +128,7 @@ class LINet(BaseModel):
     
     def _build_network(
         self,
-        block: type[Union[LIBasicBlock, LIBottleneck]],
+        block: type[Union[MSBasicBlock, MSBottleneck]],
         layers: list[int],
         replace_stride_with_dilation: list[bool]
     ):
@@ -143,7 +143,7 @@ class LINet(BaseModel):
 
         # Network architecture - exactly like ResNet but with N-stream LI components
         # First conv: no integrated input yet (integrated starts after first block)
-        self.conv1 = LIConv2d(
+        self.conv1 = MSConv2d(
             self.stream_input_channels,  # list[int] of input channels for each stream
             self.stream_inplanes,  # list[int] of output channels for each stream
             0,  # integrated_in_channels (doesn't exist yet)
@@ -151,8 +151,8 @@ class LINet(BaseModel):
             kernel_size=7, stride=2, padding=3, bias=False
         )
         self.bn1 = self._norm_layer(self.stream_inplanes, self.integrated_inplanes)
-        self.relu = LIReLU(inplace=True)
-        self.maxpool = LIMaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.relu = MSReLU(inplace=True)
+        self.maxpool = MSMaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # ResNet layers - equal scaling for all N streams
         self.layer1 = self._make_layer(block, [base[0]] * self.num_streams, base[0], layers[0])
@@ -162,7 +162,7 @@ class LINet(BaseModel):
         self.layer4[-1].skip_stream_tail = True
 
         # Adaptive average pooling for integrated stream only
-        # (Stream pooling happens in LIMaxPool2d layers)
+        # (Stream pooling happens in MSMaxPool2d layers)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         # Add dropout for regularization (configurable, critical for small datasets)
@@ -175,15 +175,15 @@ class LINet(BaseModel):
     
     def _initialize_weights(self, zero_init_residual: bool):
         """Initialize network weights for N-stream architecture."""
-        # Weight initialization for LIConv2d (already handled in LIConv2d.reset_parameters())
+        # Weight initialization for MSConv2d (already handled in MSConv2d.reset_parameters())
         # But we can double-check or add custom initialization here if needed
         for m in self.modules():
-            if isinstance(m, LIConv2d):
-                # LIConv2d.reset_parameters() already initializes all 5 weight matrices
+            if isinstance(m, MSConv2d):
+                # MSConv2d.reset_parameters() already initializes all 5 weight matrices
                 # using Kaiming initialization, so no need to do anything here
                 pass
-            elif isinstance(m, LIBatchNorm2d):
-                # LIBatchNorm2d uses standard nn.BatchNorm2d internally,
+            elif isinstance(m, MSBatchNorm2d):
+                # MSBatchNorm2d uses standard nn.BatchNorm2d internally,
                 # which initializes itself, so no need to do anything here
                 pass
 
@@ -192,13 +192,13 @@ class LINet(BaseModel):
         # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
         if zero_init_residual:
             for m in self.modules():
-                if isinstance(m, LIBottleneck):
+                if isinstance(m, MSBottleneck):
                     # Zero-init all stream BN weights
                     for stream_weight in m.bn3.stream_weights:
                         nn.init.constant_(stream_weight, 0)
                     # Zero-init integrated stream's last BN weight
                     nn.init.constant_(m.bn3.integrated_weight, 0)
-                elif isinstance(m, LIBasicBlock):
+                elif isinstance(m, MSBasicBlock):
                     # Zero-init all stream BN weights
                     for stream_weight in m.bn2.stream_weights:
                         nn.init.constant_(stream_weight, 0)
@@ -207,13 +207,13 @@ class LINet(BaseModel):
 
     def _make_layer(
         self,
-        block: type[Union[LIBasicBlock, LIBottleneck]],
+        block: type[Union[MSBasicBlock, MSBottleneck]],
         stream_planes: list[int],  # Channel counts for N streams
         integrated_planes: int,  # Channel count for integrated pathway
         blocks: int,
         stride: int = 1,
         dilate: bool = False,
-    ) -> LISequential:
+    ) -> MSSequential:
         """
         Create a layer composed of multiple residual blocks with N-stream support.
         Fully compliant with ResNet implementation but using LI blocks with N-stream channel tracking.
@@ -227,8 +227,8 @@ class LINet(BaseModel):
 
         # Check if downsampling is needed (exactly like original ResNet)
         if stride != 1 or self.stream_inplanes != [p * block.expansion for p in stream_planes] or self.integrated_inplanes != integrated_planes * block.expansion:
-            downsample = LISequential(
-                LIConv2d(
+            downsample = MSSequential(
+                MSConv2d(
                     self.stream_inplanes,
                     [p * block.expansion for p in stream_planes],
                     self.integrated_inplanes,
@@ -274,7 +274,7 @@ class LINet(BaseModel):
                 )
             )
 
-        return LISequential(*layers)
+        return MSSequential(*layers)
     
     def forward(
         self,
@@ -306,7 +306,7 @@ class LINet(BaseModel):
         # Max pooling (all N streams + integrated)
         stream_outputs, integrated = self.maxpool(stream_outputs, integrated, blanked_mask)
 
-        # ResNet layers (all N streams, integration happens inside LIConv2d neurons!)
+        # ResNet layers (all N streams, integration happens inside MSConv2d neurons!)
         stream_outputs, integrated = self.layer1(stream_outputs, integrated, blanked_mask)
         stream_outputs, integrated = self.layer2(stream_outputs, integrated, blanked_mask)
         stream_outputs, integrated = self.layer3(stream_outputs, integrated, blanked_mask)
@@ -330,17 +330,17 @@ class LINet(BaseModel):
     # ==================== Stream Balance Loss ====================
 
     def _enable_balance_capture(self, target_layer: str = 'layer4'):
-        """Enable balance norm capture on all LIConv2d modules in the target layer."""
+        """Enable balance norm capture on all MSConv2d modules in the target layer."""
         layer = getattr(self, target_layer)
         for m in layer.modules():
-            if isinstance(m, _conv_module.LIConv2d):
+            if isinstance(m, _conv_module.MSConv2d):
                 m._capture_balance_norms = True
 
     def _disable_balance_capture(self, target_layer: str = 'layer4'):
         """Disable balance norm capture and clear stored norms."""
         layer = getattr(self, target_layer)
         for m in layer.modules():
-            if isinstance(m, _conv_module.LIConv2d):
+            if isinstance(m, _conv_module.MSConv2d):
                 m._capture_balance_norms = False
                 m._last_balance_norms = None
 
@@ -350,7 +350,7 @@ class LINet(BaseModel):
         Call AFTER forward pass with balance capture enabled. Penalizes imbalance
         between stream contribution norms at the target layer.
 
-        Formula: variance of log-norms across streams, averaged over all LIConv2d
+        Formula: variance of log-norms across streams, averaged over all MSConv2d
         modules in the target layer. This is symmetric (penalizes any stream
         dominating) and scale-invariant (operates on ratios, not absolute magnitudes).
 
@@ -365,7 +365,7 @@ class LINet(BaseModel):
         eps = 1e-8
 
         for m in layer.modules():
-            if isinstance(m, _conv_module.LIConv2d) and m._last_balance_norms is not None:
+            if isinstance(m, _conv_module.MSConv2d) and m._last_balance_norms is not None:
                 norms = m._last_balance_norms  # list of N scalar tensors
                 log_norms = torch.stack([torch.log(n + eps) for n in norms])
                 balance_losses.append(log_norms.var())
@@ -672,7 +672,7 @@ class LINet(BaseModel):
         """
         Restore best full model when all streams are frozen.
 
-        Since we update best_full_model['weights'] whenever streams freeze (in li_net.py),
+        Since we update best_full_model['weights'] whenever streams freeze (in ms_net.py),
         this checkpoint already has the correct hybrid state with frozen streams at their
         best epochs. We just restore it directly without any additional preservation logic.
         """
@@ -2021,7 +2021,7 @@ class LINet(BaseModel):
         """
         The type of fusion used in the model.
 
-        For LINet, integration happens inside LIConv2d neurons (not separate fusion layer).
+        For MSNet, integration happens inside MSConv2d neurons (not separate fusion layer).
 
         Returns:
             A string representing the fusion type.
@@ -2091,7 +2091,7 @@ class LINet(BaseModel):
         # Max pooling (all N streams + integrated)
         stream_outputs, integrated = self.maxpool(stream_outputs, integrated)
 
-        # ResNet layers (integration happens inside LIConv2d neurons)
+        # ResNet layers (integration happens inside MSConv2d neurons)
         stream_outputs, integrated = self.layer1(stream_outputs, integrated)
         stream_outputs, integrated = self.layer2(stream_outputs, integrated)
         stream_outputs, integrated = self.layer3(stream_outputs, integrated)
@@ -2115,7 +2115,7 @@ class LINet(BaseModel):
 
         Uses main classifier (fc) for the full model / integrated pathway.
 
-        Note: In LINet, the full model prediction IS the integrated pathway
+        Note: In MSNet, the full model prediction IS the integrated pathway
         (forward() returns fc(integrated_features)). So full_model and
         integrated_only metrics are identical. Both keys are kept for
         backwards compatibility.
@@ -2217,7 +2217,7 @@ class LINet(BaseModel):
         # Analyze LI layers - look for modules with stream_weights and integrated_weight
         for name, module in self.named_modules():
             if hasattr(module, 'stream_weights') and hasattr(module, 'integrated_weight'):
-                # LIConv2d modules
+                # MSConv2d modules
                 integrated_weight = module.integrated_weight
 
                 # Analyze each stream's weights
@@ -2341,7 +2341,7 @@ class LINet(BaseModel):
         """
         Calculate importance based on gradient magnitudes.
 
-        Note: For LINet, the integrated stream is created FROM the N input streams,
+        Note: For MSNet, the integrated stream is created FROM the N input streams,
         so we measure input gradients for all N streams.
         The integrated stream's importance is implicit in how gradients flow back
         through the integration weights to the input streams.
@@ -2433,7 +2433,7 @@ class LINet(BaseModel):
             - stream{i}_contribution: float (0-1) - proportion from stream i based on integration weights
             - raw_norms: dict with actual weight norms for each stream
         """
-        # Analyze integration weight magnitudes across all LIConv2d layers
+        # Analyze integration weight magnitudes across all MSConv2d layers
         stream_weight_norms = [0.0] * self.num_streams
 
         for name, param in self.named_parameters():
@@ -2477,11 +2477,11 @@ class LINet(BaseModel):
         """
         DEPRECATED: Calculate hypothetical classification ability of each stream.
 
-        WARNING: This method is MISLEADING for LINet because streams don't directly classify.
+        WARNING: This method is MISLEADING for MSNet because streams don't directly classify.
         They only feed into the integrated stream through integration weights.
 
         This method measures: "How well could each stream classify IF it had its own classifier?"
-        But in LINet, streams DON'T have classifiers - only the integrated stream does.
+        But in MSNet, streams DON'T have classifiers - only the integrated stream does.
 
         **Use calculate_stream_contributions_to_integration() instead** for meaningful analysis
         of how much each input stream contributes to the integrated stream's features.
@@ -2490,10 +2490,10 @@ class LINet(BaseModel):
             data_loader: DataLoader containing N-stream input data
 
         Returns:
-            Dictionary containing hypothetical stream classification abilities (misleading for LINet)
+            Dictionary containing hypothetical stream classification abilities (misleading for MSNet)
         """
         warnings.warn(
-            "calculate_stream_contributions() is deprecated and misleading for LINet. "
+            "calculate_stream_contributions() is deprecated and misleading for MSNet. "
             "It measures hypothetical classification ability, but streams don't directly classify. "
             "Use calculate_stream_contributions_to_integration() instead for meaningful contribution analysis.",
             DeprecationWarning,
@@ -2589,8 +2589,8 @@ class LINet(BaseModel):
 
         return result 
 
-# Factory functions for common LINet architectures
-def li_resnet18(num_classes: int = 19, stream_input_channels: list[int] = None, width_multiplier: float = 1.0, **kwargs) -> LINet:
+# Factory functions for common MSNet architectures
+def ms_resnet18(num_classes: int = 19, stream_input_channels: list[int] = None, width_multiplier: float = 1.0, **kwargs) -> MSNet:
     """
     Create a Linear Integration ResNet-18 model.
 
@@ -2601,27 +2601,27 @@ def li_resnet18(num_classes: int = 19, stream_input_channels: list[int] = None, 
                               For 3 streams: [3, 1, 1] for RGB + Depth + Orthogonal
         width_multiplier: Scale channel widths. 1.0 = standard ResNet-18 [64,128,256,512].
             0.75 → [48,96,192,384] (~56% params), 0.5 → [32,64,128,256] (~25% params).
-        **kwargs: Additional arguments passed to LINet constructor
+        **kwargs: Additional arguments passed to MSNet constructor
 
     Returns:
-        LINet model instance
+        MSNet model instance
 
     Examples:
         # 2-stream (backward compatible - default)
-        model = li_resnet18(num_classes=19)
+        model = ms_resnet18(num_classes=19)
 
         # 3-stream (RGB + Depth + Orthogonal)
-        model = li_resnet18(num_classes=19, stream_input_channels=[3, 1, 1])
+        model = ms_resnet18(num_classes=19, stream_input_channels=[3, 1, 1])
 
         # Smaller model for limited data
-        model = li_resnet18(num_classes=19, width_multiplier=0.5)
+        model = ms_resnet18(num_classes=19, width_multiplier=0.5)
     """
     # Default to 2-stream for backward compatibility with existing code
     if stream_input_channels is None:
         stream_input_channels = [3, 1]  # RGB + Depth
 
-    return LINet(
-        LIBasicBlock,
+    return MSNet(
+        MSBasicBlock,
         [2, 2, 2, 2],
         num_classes=num_classes,
         stream_input_channels=stream_input_channels,
@@ -2629,7 +2629,7 @@ def li_resnet18(num_classes: int = 19, stream_input_channels: list[int] = None, 
         **kwargs
     )
 
-def li_resnet34(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> LINet:
+def ms_resnet34(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> MSNet:
     """
     Create a Linear Integration ResNet-34 model.
 
@@ -2638,17 +2638,17 @@ def li_resnet34(num_classes: int = 1000, stream_input_channels: list[int] = None
         stream_input_channels: List of input channels for each stream.
                               Default: [3, 1] for RGB + Depth (backward compatible)
                               For 3 streams: [3, 1, 1] for RGB + Depth + Orthogonal
-        **kwargs: Additional arguments passed to LINet constructor
+        **kwargs: Additional arguments passed to MSNet constructor
 
     Returns:
-        LINet model instance
+        MSNet model instance
     """
     # Default to 2-stream for backward compatibility with existing code
     if stream_input_channels is None:
         stream_input_channels = [3, 1]  # RGB + Depth
 
-    return LINet(
-        LIBasicBlock,
+    return MSNet(
+        MSBasicBlock,
         [3, 4, 6, 3],
         num_classes=num_classes,
         stream_input_channels=stream_input_channels,
@@ -2656,7 +2656,7 @@ def li_resnet34(num_classes: int = 1000, stream_input_channels: list[int] = None
     )
 
 
-def li_resnet50(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> LINet:
+def ms_resnet50(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> MSNet:
     """
     Create a Linear Integration ResNet-50 model.
 
@@ -2665,17 +2665,17 @@ def li_resnet50(num_classes: int = 1000, stream_input_channels: list[int] = None
         stream_input_channels: List of input channels for each stream.
                               Default: [3, 1] for RGB + Depth (backward compatible)
                               For 3 streams: [3, 1, 1] for RGB + Depth + Orthogonal
-        **kwargs: Additional arguments passed to LINet constructor
+        **kwargs: Additional arguments passed to MSNet constructor
 
     Returns:
-        LINet model instance
+        MSNet model instance
     """
     # Default to 2-stream for backward compatibility with existing code
     if stream_input_channels is None:
         stream_input_channels = [3, 1]  # RGB + Depth
 
-    return LINet(
-        LIBottleneck,
+    return MSNet(
+        MSBottleneck,
         [3, 4, 6, 3],
         num_classes=num_classes,
         stream_input_channels=stream_input_channels,
@@ -2683,7 +2683,7 @@ def li_resnet50(num_classes: int = 1000, stream_input_channels: list[int] = None
     )
 
 
-def li_resnet101(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> LINet:
+def ms_resnet101(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> MSNet:
     """
     Create a Linear Integration ResNet-101 model.
 
@@ -2692,17 +2692,17 @@ def li_resnet101(num_classes: int = 1000, stream_input_channels: list[int] = Non
         stream_input_channels: List of input channels for each stream.
                               Default: [3, 1] for RGB + Depth (backward compatible)
                               For 3 streams: [3, 1, 1] for RGB + Depth + Orthogonal
-        **kwargs: Additional arguments passed to LINet constructor
+        **kwargs: Additional arguments passed to MSNet constructor
 
     Returns:
-        LINet model instance
+        MSNet model instance
     """
     # Default to 2-stream for backward compatibility with existing code
     if stream_input_channels is None:
         stream_input_channels = [3, 1]  # RGB + Depth
 
-    return LINet(
-        LIBottleneck,
+    return MSNet(
+        MSBottleneck,
         [3, 4, 23, 3],
         num_classes=num_classes,
         stream_input_channels=stream_input_channels,
@@ -2710,7 +2710,7 @@ def li_resnet101(num_classes: int = 1000, stream_input_channels: list[int] = Non
     )
 
 
-def li_resnet152(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> LINet:
+def ms_resnet152(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> MSNet:
     """
     Create a Linear Integration ResNet-152 model.
 
@@ -2719,17 +2719,17 @@ def li_resnet152(num_classes: int = 1000, stream_input_channels: list[int] = Non
         stream_input_channels: List of input channels for each stream.
                               Default: [3, 1] for RGB + Depth (backward compatible)
                               For 3 streams: [3, 1, 1] for RGB + Depth + Orthogonal
-        **kwargs: Additional arguments passed to LINet constructor
+        **kwargs: Additional arguments passed to MSNet constructor
 
     Returns:
-        LINet model instance
+        MSNet model instance
     """
     # Default to 2-stream for backward compatibility with existing code
     if stream_input_channels is None:
         stream_input_channels = [3, 1]  # RGB + Depth
 
-    return LINet(
-        LIBottleneck,
+    return MSNet(
+        MSBottleneck,
         [3, 8, 36, 3],
         num_classes=num_classes,
         stream_input_channels=stream_input_channels,

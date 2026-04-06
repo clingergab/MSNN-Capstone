@@ -20,7 +20,7 @@ from typing import Optional, Union
 USE_CHANNELS_LAST = True
 
 
-class _LIConvNd(nn.Module):
+class _MSConvNd(nn.Module):
     """
     Linear Integration convolution base class - follows PyTorch's _ConvNd pattern exactly.
 
@@ -312,7 +312,7 @@ class _LIConvNd(nn.Module):
             self.padding_mode = "zeros"
 
 
-class LIConv2d(_LIConvNd):
+class MSConv2d(_MSConvNd):
     """
     Linear Integration 2D Convolution layer - follows PyTorch's Conv2d pattern exactly.
 
@@ -545,7 +545,7 @@ class LIConv2d(_LIConvNd):
             )
 
 
-class _LINormBase(nn.Module):
+class _MSNormBase(nn.Module):
     """Common base for Linear Integration normalization - follows PyTorch's _NormBase pattern exactly."""
 
     _version = 2
@@ -721,7 +721,7 @@ class _LINormBase(nn.Module):
         )
 
 
-class _LIBatchNorm(_LINormBase):
+class _MSBatchNorm(_MSNormBase):
     """Linear Integration BatchNorm - follows PyTorch's _BatchNorm pattern exactly."""
 
     def __init__(
@@ -914,7 +914,7 @@ class _LIBatchNorm(_LINormBase):
         return out
 
 
-class LIBatchNorm2d(_LIBatchNorm):
+class MSBatchNorm2d(_MSBatchNorm):
     r"""Applies Linear Integration Batch Normalization over N 4D inputs.
 
     This layer applies Batch Normalization separately to N stream and integrated pathways,
@@ -984,9 +984,9 @@ class LIBatchNorm2d(_LIBatchNorm):
     Examples::
 
         >>> # With Learnable Parameters for 3 streams
-        >>> m = LIBatchNorm2d([64, 64, 64], 64)
+        >>> m = MSBatchNorm2d([64, 64, 64], 64)
         >>> # Without Learnable Parameters
-        >>> m = LIBatchNorm2d([64, 64, 64], 64, affine=False)
+        >>> m = MSBatchNorm2d([64, 64, 64], 64, affine=False)
         >>> stream_inputs = [torch.randn(20, 64, 35, 45) for _ in range(3)]
         >>> integrated_input = torch.randn(20, 64, 35, 45)
         >>> stream_outputs, integrated_output = m(stream_inputs, integrated_input)

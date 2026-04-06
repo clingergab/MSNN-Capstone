@@ -1,7 +1,7 @@
 """
 Test if parameter ordering affects optimizer behavior.
 
-The parameter ordering in LINet (integrated first) vs Original (streams first)
+The parameter ordering in MSNet (integrated first) vs Original (streams first)
 could potentially affect:
 1. How optimizer updates parameters
 2. Learning rate scheduling per-parameter-group
@@ -14,11 +14,11 @@ import torch.optim as optim
 import sys
 sys.path.insert(0, '/Users/gclinger/Documents/projects/Multi-Stream-Neural-Networks')
 
-from models.linear_integration.li_net import LINet as LINet
-from models.linear_integration.blocks import LIBasicBlock as LIBasicBlock3
+from models.linear_integration.ms_net import MSNet as MSNet
+from models.linear_integration.blocks import MSBasicBlock as MSBasicBlock3
 
-from src.models.linear_integration.li_net import LINet as LINetOriginal
-from src.models.linear_integration.blocks import LIBasicBlock as LIBasicBlockOriginal
+from src.models.linear_integration.ms_net import MSNet as MSNetOriginal
+from src.models.linear_integration.blocks import MSBasicBlock as MSBasicBlockOriginal
 
 SEED = 42
 
@@ -26,8 +26,8 @@ SEED = 42
 def create_models():
     """Create both models with identical seeds."""
     torch.manual_seed(SEED)
-    model_orig = LINetOriginal(
-        block=LIBasicBlockOriginal,
+    model_orig = MSNetOriginal(
+        block=MSBasicBlockOriginal,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream1_input_channels=3,
@@ -36,15 +36,15 @@ def create_models():
     ).to('cpu')
 
     torch.manual_seed(SEED)
-    model_linet = LINet(
-        block=LIBasicBlock3,
+    model_msnet = MSNet(
+        block=MSBasicBlock3,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream_input_channels=[3, 1],
         device='cpu'
     ).to('cpu')
 
-    return model_orig, model_linet
+    return model_orig, model_msnet
 
 
 def test_optimizer_step_equivalence():
@@ -53,14 +53,14 @@ def test_optimizer_step_equivalence():
     print("Test: Optimizer Step Equivalence")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     # Create optimizers with same settings
     lr = 0.01
     opt_orig = optim.SGD(model_orig.parameters(), lr=lr, momentum=0.9)
-    opt_li3 = optim.SGD(model_linet.parameters(), lr=lr, momentum=0.9)
+    opt_ms = optim.SGD(model_msnet.parameters(), lr=lr, momentum=0.9)
 
     # Same input and targets
     torch.manual_seed(SEED)
@@ -72,17 +72,17 @@ def test_optimizer_step_equivalence():
 
     # Forward pass
     out_orig = model_orig(rgb, depth)
-    out_li3 = model_linet([rgb, depth])
+    out_ms = model_msnet([rgb, depth])
 
     # Loss
     loss_orig = criterion(out_orig, targets)
-    loss_li3 = criterion(out_li3, targets)
+    loss_li3 = criterion(out_ms, targets)
 
-    print(f"\nInitial losses: Original={loss_orig.item():.6f}, LINet={loss_li3.item():.6f}")
+    print(f"\nInitial losses: Original={loss_orig.item():.6f}, MSNet={loss_li3.item():.6f}")
 
     # Backward
     opt_orig.zero_grad()
-    opt_li3.zero_grad()
+    opt_ms.zero_grad()
 
     loss_orig.backward()
     loss_li3.backward()
@@ -90,19 +90,19 @@ def test_optimizer_step_equivalence():
     # Check gradients before step
     print("\n--- Gradients Before Step ---")
     orig_s1_grad = model_orig.conv1.stream1_weight.grad.clone()
-    li3_s0_grad = model_linet.conv1.stream_weights[0].grad.clone()
-    grad_diff = (orig_s1_grad - li3_s0_grad).abs().max().item()
+    ms_s0_grad = model_msnet.conv1.stream_weights[0].grad.clone()
+    grad_diff = (orig_s1_grad - ms_s0_grad).abs().max().item()
     print(f"conv1 stream1/0 weight grad diff: {grad_diff:.2e}")
 
     # Step
     opt_orig.step()
-    opt_li3.step()
+    opt_ms.step()
 
     # Check weights after step
     print("\n--- Weights After Step ---")
     orig_s1_weight = model_orig.conv1.stream1_weight
-    li3_s0_weight = model_linet.conv1.stream_weights[0]
-    weight_diff = (orig_s1_weight - li3_s0_weight).abs().max().item()
+    ms_s0_weight = model_msnet.conv1.stream_weights[0]
+    weight_diff = (orig_s1_weight - ms_s0_weight).abs().max().item()
     print(f"conv1 stream1/0 weight diff: {weight_diff:.2e}")
 
     if weight_diff < 1e-6:
@@ -113,9 +113,9 @@ def test_optimizer_step_equivalence():
     # Second forward to check outputs
     with torch.no_grad():
         out_orig_2 = model_orig(rgb, depth)
-        out_li3_2 = model_linet([rgb, depth])
+        out_ms_2 = model_msnet([rgb, depth])
 
-    output_diff = (out_orig_2 - out_li3_2).abs().max().item()
+    output_diff = (out_orig_2 - out_ms_2).abs().max().item()
     print(f"\nOutput diff after optimization step: {output_diff:.2e}")
 
     if output_diff < 1e-5:
@@ -130,13 +130,13 @@ def test_training_loop_equivalence():
     print("Test: Multi-Step Training Equivalence")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.train()
-    model_linet.train()
+    model_msnet.train()
 
     lr = 0.01
     opt_orig = optim.SGD(model_orig.parameters(), lr=lr, momentum=0.9)
-    opt_li3 = optim.SGD(model_linet.parameters(), lr=lr, momentum=0.9)
+    opt_ms = optim.SGD(model_msnet.parameters(), lr=lr, momentum=0.9)
 
     criterion = nn.CrossEntropyLoss()
 
@@ -151,21 +151,21 @@ def test_training_loop_equivalence():
 
         # Forward
         out_orig = model_orig(rgb, depth)
-        out_li3 = model_linet([rgb, depth])
+        out_ms = model_msnet([rgb, depth])
 
         # Loss
         loss_orig = criterion(out_orig, targets)
-        loss_li3 = criterion(out_li3, targets)
+        loss_li3 = criterion(out_ms, targets)
 
         # Backward
         opt_orig.zero_grad()
-        opt_li3.zero_grad()
+        opt_ms.zero_grad()
         loss_orig.backward()
         loss_li3.backward()
 
         # Step
         opt_orig.step()
-        opt_li3.step()
+        opt_ms.step()
 
         if step % 3 == 0:
             loss_diff = abs(loss_orig.item() - loss_li3.item())
@@ -176,14 +176,14 @@ def test_training_loop_equivalence():
 
     # Check weights
     orig_s1_weight = model_orig.conv1.stream1_weight
-    li3_s0_weight = model_linet.conv1.stream_weights[0]
-    weight_diff = (orig_s1_weight - li3_s0_weight).abs().max().item()
+    ms_s0_weight = model_msnet.conv1.stream_weights[0]
+    weight_diff = (orig_s1_weight - ms_s0_weight).abs().max().item()
     print(f"conv1 stream1/0 weight diff: {weight_diff:.2e}")
 
     # Check BN stats
     orig_bn_mean = model_orig.bn1.stream1_running_mean
-    li3_bn_mean = getattr(model_linet.bn1, 'stream0_running_mean')
-    bn_diff = (orig_bn_mean - li3_bn_mean).abs().max().item()
+    ms_bn_mean = getattr(model_msnet.bn1, 'stream0_running_mean')
+    bn_diff = (orig_bn_mean - ms_bn_mean).abs().max().item()
     print(f"bn1 stream1/0 running_mean diff: {bn_diff:.2e}")
 
     # Check outputs
@@ -192,13 +192,13 @@ def test_training_loop_equivalence():
     depth = torch.randn(4, 1, 32, 32)
 
     model_orig.eval()
-    model_linet.eval()
+    model_msnet.eval()
 
     with torch.no_grad():
         out_orig = model_orig(rgb, depth)
-        out_li3 = model_linet([rgb, depth])
+        out_ms = model_msnet([rgb, depth])
 
-    output_diff = (out_orig - out_li3).abs().max().item()
+    output_diff = (out_orig - out_ms).abs().max().item()
     print(f"Final output diff: {output_diff:.2e}")
 
     if output_diff < 1e-4 and weight_diff < 1e-5:
@@ -213,10 +213,10 @@ def test_parameter_group_order():
     print("Test: Optimizer Parameter Group Order")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     opt_orig = optim.SGD(model_orig.parameters(), lr=0.01)
-    opt_li3 = optim.SGD(model_linet.parameters(), lr=0.01)
+    opt_ms = optim.SGD(model_msnet.parameters(), lr=0.01)
 
     print("\n--- Original Model Parameter Order in Optimizer ---")
     for i, (name, param) in enumerate(model_orig.named_parameters()):
@@ -225,17 +225,17 @@ def test_parameter_group_order():
         elif i == 10:
             print(f"  ... and {len(list(model_orig.parameters())) - 10} more parameters")
 
-    print("\n--- LINet Model Parameter Order in Optimizer ---")
-    for i, (name, param) in enumerate(model_linet.named_parameters()):
+    print("\n--- MSNet Model Parameter Order in Optimizer ---")
+    for i, (name, param) in enumerate(model_msnet.named_parameters()):
         if i < 10:
             print(f"  {i}: {name} ({param.shape})")
         elif i == 10:
-            print(f"  ... and {len(list(model_linet.parameters())) - 10} more parameters")
+            print(f"  ... and {len(list(model_msnet.parameters())) - 10} more parameters")
 
     print("\n--- Analysis ---")
     print("The optimizer iterates through parameters in registration order.")
     print("Original registers: stream1 → stream2 → integrated → integration_from_*")
-    print("LINet registers: integrated → stream_weights → integration_from_streams")
+    print("MSNet registers: integrated → stream_weights → integration_from_streams")
     print("\nHowever, SGD/Adam update each parameter independently, so order doesn't")
     print("affect the final result - only the update rule and gradient matter.")
 
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     print("CONCLUSION")
     print("=" * 80)
     print("""
-The parameter ordering difference between Original and LINet does NOT affect:
+The parameter ordering difference between Original and MSNet does NOT affect:
 1. Optimizer updates (each parameter updated independently)
 2. Training convergence (same gradients, same update rules)
 3. Model outputs (forward pass is identical)

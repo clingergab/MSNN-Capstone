@@ -98,7 +98,7 @@ scheduler = setup_scheduler(
 ### In Training Config
 
 ```python
-# For LINet or MCResNet models
+# For MSNet or MCResNet models
 model.compile(
     optimizer='adamw',
     learning_rate=1e-4,
