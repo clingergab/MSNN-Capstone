@@ -2,7 +2,7 @@
 
 ## Overview
 
-Implement **per-sample** modality dropout to train LINet to handle missing streams. Each sample in a batch can independently have a different stream blanked (or no stream blanked). When a stream is blanked for a sample, that sample's contribution should be invisible: no BN stats affected, no gradients, no contribution to integration.
+Implement **per-sample** modality dropout to train MSNet to handle missing streams. Each sample in a batch can independently have a different stream blanked (or no stream blanked). When a stream is blanked for a sample, that sample's contribution should be invisible: no BN stats affected, no gradients, no contribution to integration.
 
 ## Key Design Decision
 
@@ -143,11 +143,11 @@ def generate_per_sample_blanked_mask(
     return blanked_mask
 ```
 
-### 2. `src/models/linear_integration/li_net/conv.py`
+### 2. `src/models/linear_integration/ms_net/conv.py`
 
 > Note: No changes to schedulers.py - all modality dropout code is in the new modality_dropout.py file.
 
-**Modify `LIConv2d._conv_forward()`** - mask after conv:
+**Modify `MSConv2d._conv_forward()`** - mask after conv:
 
 ```python
 def _conv_forward(
@@ -199,10 +199,10 @@ def _conv_forward(
     # ... existing integration code ...
 ```
 
-**Modify `LIConv2d.forward()`**:
+**Modify `MSConv2d.forward()`**:
 - Add `blanked_mask` parameter, pass to `_conv_forward`
 
-**Modify `LIBatchNorm2d.forward()`** - subset BN approach:
+**Modify `MSBatchNorm2d.forward()`** - subset BN approach:
 
 ```python
 def forward(
@@ -286,9 +286,9 @@ def forward(
     return stream_outputs, integrated_out
 ```
 
-### 3. `src/models/linear_integration/li_net/container.py`
+### 3. `src/models/linear_integration/ms_net/container.py`
 
-**Modify `LISequential.forward()`**:
+**Modify `MSSequential.forward()`**:
 ```python
 def forward(
     self,
@@ -301,7 +301,7 @@ def forward(
     return stream_inputs, integrated_input
 ```
 
-**Modify `LIReLU.forward()`**:
+**Modify `MSReLU.forward()`**:
 ```python
 def forward(
     self,
@@ -315,9 +315,9 @@ def forward(
     return stream_outputs, integrated_out
 ```
 
-### 4. `src/models/linear_integration/li_net/pooling.py`
+### 4. `src/models/linear_integration/ms_net/pooling.py`
 
-**Modify `LIMaxPool2d.forward()`**:
+**Modify `MSMaxPool2d.forward()`**:
 ```python
 def forward(
     self,
@@ -333,9 +333,9 @@ def forward(
     return stream_outputs, integrated_out
 ```
 
-### 5. `src/models/linear_integration/li_net/blocks.py`
+### 5. `src/models/linear_integration/ms_net/blocks.py`
 
-**Modify `LIBasicBlock.forward()`**:
+**Modify `MSBasicBlock.forward()`**:
 ```python
 def forward(
     self,
@@ -354,8 +354,8 @@ def forward(
     stream_outputs, integrated = self.conv2(stream_outputs, integrated, blanked_mask)
     stream_outputs, integrated = self.bn2(stream_outputs, integrated, blanked_mask)
 
-    # Downsample is an LISequential containing LIConv2d + LIBatchNorm2d
-    # LISequential.forward() accepts blanked_mask and propagates it to all contained modules
+    # Downsample is an MSSequential containing MSConv2d + MSBatchNorm2d
+    # MSSequential.forward() accepts blanked_mask and propagates it to all contained modules
     if self.downsample is not None:
         stream_identities, integrated_identity = self.downsample(
             stream_identities, integrated_identity, blanked_mask)
@@ -372,11 +372,11 @@ def forward(
     return stream_outputs, integrated
 ```
 
-**Modify `LIBottleneck.forward()`** - same pattern (propagate blanked_mask to all layers).
+**Modify `MSBottleneck.forward()`** - same pattern (propagate blanked_mask to all layers).
 
-**Note on Downsample**: The `downsample` attribute is an `LISequential` containing `LIConv2d` and `LIBatchNorm2d`. Since we're modifying `LISequential.forward()` to accept and propagate `blanked_mask`, the downsample path will automatically handle masking correctly.
+**Note on Downsample**: The `downsample` attribute is an `MSSequential` containing `MSConv2d` and `MSBatchNorm2d`. Since we're modifying `MSSequential.forward()` to accept and propagate `blanked_mask`, the downsample path will automatically handle masking correctly.
 
-### 6. `src/models/linear_integration/li_net/li_net.py`
+### 6. `src/models/linear_integration/ms_net/ms_net.py`
 
 **Modify `forward()`**:
 ```python
@@ -521,12 +521,12 @@ def evaluate(
 ## Implementation Order
 
 1. **Create `src/training/modality_dropout.py`** - new file with `get_modality_dropout_prob()` and `generate_per_sample_blanked_mask()`
-2. **Modify `conv.py`** - `LIConv2d._conv_forward()` and `forward()` with per-sample masking after conv
-3. **Modify `conv.py`** - `LIBatchNorm2d.forward()` with subset BN approach
-4. **Modify `container.py`** - `LISequential.forward()` and `LIReLU.forward()` to propagate mask
-5. **Modify `pooling.py`** - `LIMaxPool2d.forward()` to propagate mask
-6. **Modify `blocks.py`** - `LIBasicBlock.forward()` and `LIBottleneck.forward()` to propagate mask
-7. **Modify `li_net.py`** - `forward()`, `fit()`, `_train_epoch()`, and `evaluate()`
+2. **Modify `conv.py`** - `MSConv2d._conv_forward()` and `forward()` with per-sample masking after conv
+3. **Modify `conv.py`** - `MSBatchNorm2d.forward()` with subset BN approach
+4. **Modify `container.py`** - `MSSequential.forward()` and `MSReLU.forward()` to propagate mask
+5. **Modify `pooling.py`** - `MSMaxPool2d.forward()` to propagate mask
+6. **Modify `blocks.py`** - `MSBasicBlock.forward()` and `MSBottleneck.forward()` to propagate mask
+7. **Modify `ms_net.py`** - `forward()`, `fit()`, `_train_epoch()`, and `evaluate()`
 8. **Test end-to-end** - verify mask generation, zero propagation, and gradient isolation
 
 ---

@@ -145,7 +145,7 @@ class DMNet(BaseModel):
         self.layer4 = self._make_layer(block, [512] * self.num_streams, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2])
 
         # Adaptive average pooling for integrated stream only
-        # (Stream pooling happens in LIMaxPool2d layers)
+        # (Stream pooling happens in MSMaxPool2d layers)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         # Add dropout for regularization (configurable, critical for small datasets)
@@ -553,7 +553,7 @@ class DMNet(BaseModel):
         """
         Restore best full model when all streams are frozen.
 
-        Since we update best_full_model['weights'] whenever streams freeze (in li_net.py),
+        Since we update best_full_model['weights'] whenever streams freeze (in ms_net.py),
         this checkpoint already has the correct hybrid state with frozen streams at their
         best epochs. We just restore it directly without any additional preservation logic.
         """
@@ -1594,7 +1594,7 @@ class DMNet(BaseModel):
         # Max pooling (all N streams + integrated)
         stream_outputs, integrated = self.maxpool(stream_outputs, integrated)
 
-        # ResNet layers (integration happens inside LIConv2d neurons)
+        # ResNet layers (integration happens inside MSConv2d neurons)
         stream_outputs, integrated = self.layer1(stream_outputs, integrated)
         stream_outputs, integrated = self.layer2(stream_outputs, integrated)
         stream_outputs, integrated = self.layer3(stream_outputs, integrated)
@@ -1876,7 +1876,7 @@ class DMNet(BaseModel):
         """
         Calculate importance based on gradient magnitudes.
 
-        Note: For LINet, the integrated stream is created FROM the N input streams,
+        Note: For MSNet, the integrated stream is created FROM the N input streams,
         so we measure input gradients for all N streams.
         The integrated stream's importance is implicit in how gradients flow back
         through the integration weights to the input streams.
@@ -2009,11 +2009,11 @@ class DMNet(BaseModel):
         """
         DEPRECATED: Calculate hypothetical classification ability of each stream.
 
-        WARNING: This method is MISLEADING for LINet because streams don't directly classify.
+        WARNING: This method is MISLEADING for MSNet because streams don't directly classify.
         They only feed into the integrated stream through integration weights.
 
         This method measures: "How well could each stream classify IF it had its own classifier?"
-        But in LINet, streams DON'T have classifiers - only the integrated stream does.
+        But in MSNet, streams DON'T have classifiers - only the integrated stream does.
 
         **Use calculate_stream_contributions_to_integration() instead** for meaningful analysis
         of how much each input stream contributes to the integrated stream's features.
@@ -2022,10 +2022,10 @@ class DMNet(BaseModel):
             data_loader: DataLoader containing N-stream input data
 
         Returns:
-            Dictionary containing hypothetical stream classification abilities (misleading for LINet)
+            Dictionary containing hypothetical stream classification abilities (misleading for MSNet)
         """
         warnings.warn(
-            "calculate_stream_contributions() is deprecated and misleading for LINet. "
+            "calculate_stream_contributions() is deprecated and misleading for MSNet. "
             "It measures hypothetical classification ability, but streams don't directly classify. "
             "Use calculate_stream_contributions_to_integration() instead for meaningful contribution analysis.",
             DeprecationWarning,
@@ -2121,7 +2121,7 @@ class DMNet(BaseModel):
 
         return result 
 
-# Factory functions for common LINet architectures
+# Factory functions for common MSNet architectures
 def dm_net18(num_classes: int = 1000, stream_input_channels: list[int] = None, **kwargs) -> DMNet:
     """
     Create a Direct Mixing ResNet-18 model.

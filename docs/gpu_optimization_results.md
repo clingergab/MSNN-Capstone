@@ -1,8 +1,8 @@
-# GPU Optimization Results for LINet
+# GPU Optimization Results for MSNet
 
 ## Problem
 
-LINet processes N=3 independent streams (RGB, Depth, Orthogonal) through a ResNet-18 backbone. Each per-stream operation (conv, BN, ReLU, pooling) runs sequentially in a Python loop, launching ~315 separate small GPU kernels per forward pass. The hypothesis was that the GPU is underutilized because each kernel is too small to saturate compute.
+MSNet processes N=3 independent streams (RGB, Depth, Orthogonal) through a ResNet-18 backbone. Each per-stream operation (conv, BN, ReLU, pooling) runs sequentially in a Python loop, launching ~315 separate small GPU kernels per forward pass. The hypothesis was that the GPU is underutilized because each kernel is too small to saturate compute.
 
 ## What We Tried
 
@@ -52,7 +52,7 @@ cuDNN internally operates in NHWC. When inputs are NCHW, every conv call reforma
 
 ### 4. BN+ReLU Fusion (Kept)
 
-Added an `apply_relu` parameter to `LIBatchNorm2d._forward_single_pathway()` so ReLU is applied immediately after batch norm within the same method call, eliminating the separate `LIReLU` module invocation in the forward path.
+Added an `apply_relu` parameter to `MSBatchNorm2d._forward_single_pathway()` so ReLU is applied immediately after batch norm within the same method call, eliminating the separate `MSReLU` module invocation in the forward path.
 
 **Impact**: Minor — saves Python-level overhead of the separate ReLU module call. The actual CUDA kernels are still separate (cuDNN BN + vectorized ReLU), but the Python dispatch is simplified.
 
@@ -62,14 +62,14 @@ Only two optimizations survived profiling:
 
 ### channels_last (NHWC) format
 
-**Where**: `li_net.py` — model weights converted in `__init__()`, inputs converted in `forward()`
+**Where**: `ms_net.py` — model weights converted in `__init__()`, inputs converted in `forward()`
 
 ```python
-# In LIResNet.__init__():
+# In MSResNet.__init__():
 if _conv_module.USE_CHANNELS_LAST:
     self.to(memory_format=torch.channels_last)
 
-# In LIResNet.forward():
+# In MSResNet.forward():
 if _conv_module.USE_CHANNELS_LAST:
     stream_inputs = [s.contiguous(memory_format=torch.channels_last) for s in stream_inputs]
 ```
@@ -78,7 +78,7 @@ Controlled by `USE_CHANNELS_LAST` flag in `conv.py` (default: `True`).
 
 ### BN+ReLU fusion
 
-**Where**: `conv.py` `LIBatchNorm2d._forward_single_pathway()` accepts `apply_relu` parameter. Called with `apply_relu=True` from `blocks.py` (`BasicBlock`, `Bottleneck`) and `li_net.py` (after conv1).
+**Where**: `conv.py` `MSBatchNorm2d._forward_single_pathway()` accepts `apply_relu` parameter. Called with `apply_relu=True` from `blocks.py` (`BasicBlock`, `Bottleneck`) and `ms_net.py` (after conv1).
 
 ## Profiling Numbers (A100, batch=16, 416x544, AMP)
 

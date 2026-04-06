@@ -1,5 +1,5 @@
 """
-Diagnostic test for LINet gradient flow issues.
+Diagnostic test for MSNet gradient flow issues.
 
 This script diagnoses why stream pathways aren't learning while
 the integrated stream is volatile during training.
@@ -14,18 +14,18 @@ from collections import defaultdict
 import sys
 sys.path.insert(0, '/Users/gclinger/Documents/projects/Multi-Stream-Neural-Networks')
 
-from models.linear_integration.li_net import LINet, li_resnet18
-from models.linear_integration.conv import LIConv2d
-from models.linear_integration.blocks import LIBasicBlock
+from models.linear_integration.ms_net import MSNet, ms_resnet18
+from models.linear_integration.conv import MSConv2d
+from models.linear_integration.blocks import MSBasicBlock
 
 def analyze_gradient_flow():
     """Analyze gradient flow from loss back to stream parameters."""
     print("=" * 80)
-    print("LINet Gradient Flow Analysis")
+    print("MSNet Gradient Flow Analysis")
     print("=" * 80)
 
     # Create model on CPU explicitly
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.train()
 
@@ -135,7 +135,7 @@ def analyze_gradient_flow_per_layer():
     print("Per-Layer Gradient Analysis")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.train()
 
@@ -199,7 +199,7 @@ def simulate_training_dynamics():
     print("Training Dynamics Simulation (10 steps)")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.train()
 
@@ -283,7 +283,7 @@ def check_integration_weight_initialization():
     print("Weight Initialization Analysis")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
 
     stream_weight_stats = []
@@ -341,7 +341,7 @@ def analyze_forward_pass_magnitudes():
     print("Forward Pass Activation Analysis")
     print("=" * 80)
 
-    model = li_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
+    model = ms_resnet18(num_classes=10, stream_input_channels=[3, 1], device='cpu')
     model = model.to('cpu')
     model.eval()
 
@@ -396,7 +396,7 @@ def analyze_forward_pass_magnitudes():
 
 
 if __name__ == "__main__":
-    print("\n🔍 Running LINet Gradient Flow Diagnostics...\n")
+    print("\n🔍 Running MSNet Gradient Flow Diagnostics...\n")
 
     analyze_gradient_flow()
     analyze_gradient_flow_per_layer()
@@ -408,7 +408,7 @@ if __name__ == "__main__":
     print("SUMMARY")
     print("=" * 80)
     print("""
-The key issue with LINet training may be:
+The key issue with MSNet training may be:
 
 1. GRADIENT IMBALANCE: Integration weights (1x1 convs) have smaller fan-in
    than stream weights (3x3 or 7x7 convs). With Kaiming init, this means

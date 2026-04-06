@@ -1,5 +1,5 @@
 """
-Stream visualization tools for LINet multi-stream neural networks.
+Stream visualization tools for MSNet multi-stream neural networks.
 
 Provides feature map visualization, stream contribution decomposition,
 stream-decomposed Grad-CAM, integration weight visualization, and helpers
@@ -75,7 +75,7 @@ def _save_or_show(fig: plt.Figure, save_path: Optional[str] = None) -> None:
 # ---------------------------------------------------------------------------
 
 class FeatureMapVisualizer:
-    """Visualize feature maps at any layer of LINet.
+    """Visualize feature maps at any layer of MSNet.
 
     Three viewing modes:
       1. Full model (all streams + integrated): normal forward pass.
@@ -369,7 +369,7 @@ class FeatureMapVisualizer:
 class StreamContributionVisualizer:
     """Visualize per-stream contributions to integrated pathway neurons.
 
-    Uses LIConv2d._capture_contributions flag to decompose the integrated
+    Uses MSConv2d._capture_contributions flag to decompose the integrated
     output into per-stream contribution tensors.
     """
 
@@ -380,20 +380,20 @@ class StreamContributionVisualizer:
         self.labels = _default_stream_labels(self.num_streams, stream_labels)
 
     def _enable_capture(self, layer_name: str) -> None:
-        """Enable contribution capture on LIConv2d modules within the target layer."""
+        """Enable contribution capture on MSConv2d modules within the target layer."""
         for name, module in self.model.named_modules():
             if name.startswith(layer_name) and hasattr(module, "_capture_contributions"):
                 module._capture_contributions = True
 
     def _disable_capture(self) -> None:
-        """Disable contribution capture on all LIConv2d modules."""
+        """Disable contribution capture on all MSConv2d modules."""
         for module in self.model.modules():
             if hasattr(module, "_capture_contributions"):
                 module._capture_contributions = False
                 module._last_contributions = None
 
     def _collect_contributions(self, layer_name: str) -> list[dict]:
-        """Collect captured contributions from all LIConv2d modules in the layer."""
+        """Collect captured contributions from all MSConv2d modules in the layer."""
         results = []
         for name, module in self.model.named_modules():
             if name.startswith(layer_name) and hasattr(module, "_last_contributions") and module._last_contributions is not None:
@@ -671,7 +671,7 @@ class StreamContributionVisualizer:
 # ---------------------------------------------------------------------------
 
 class StreamGradCAM:
-    """Grad-CAM extended for multi-stream LINet.
+    """Grad-CAM extended for multi-stream MSNet.
 
     Three modes:
       - integrated: Standard Grad-CAM on integrated activations.
@@ -763,7 +763,7 @@ class StreamGradCAM:
 
         def bwd_hook(mod, grad_in, grad_out):
             if isinstance(grad_out, tuple):
-                # For LISequential returning (list[Tensor], Tensor),
+                # For MSSequential returning (list[Tensor], Tensor),
                 # grad_out[1] is the gradient for the integrated output
                 gradients["val"] = grad_out[1].detach() if grad_out[1] is not None else None
             else:
@@ -1095,7 +1095,7 @@ def compare_samples(
     """Side-by-side Grad-CAM + contribution comparison of two samples.
 
     Args:
-        model: LINet model.
+        model: MSNet model.
         correct_sample: dict from find_misclassified or similar, with 'stream_inputs' and 'true_label'.
         misclassified_sample: same format.
         layer: target layer.

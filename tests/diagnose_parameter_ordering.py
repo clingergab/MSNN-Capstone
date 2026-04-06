@@ -1,5 +1,5 @@
 """
-Diagnostic test to analyze parameter ordering differences between Original LINet and LINet.
+Diagnostic test to analyze parameter ordering differences between Original MSNet and MSNet.
 
 The user expected parameter order: stream1, stream2, ..., integrated
 This test checks if both models follow this convention.
@@ -10,11 +10,11 @@ import torch.nn as nn
 import sys
 sys.path.insert(0, '/Users/gclinger/Documents/projects/Multi-Stream-Neural-Networks')
 
-from models.linear_integration.li_net import LINet as LINet
-from models.linear_integration.blocks import LIBasicBlock as LIBasicBlock3
+from models.linear_integration.ms_net import MSNet as MSNet
+from models.linear_integration.blocks import MSBasicBlock as MSBasicBlock3
 
-from src.models.linear_integration.li_net import LINet as LINetOriginal
-from src.models.linear_integration.blocks import LIBasicBlock as LIBasicBlockOriginal
+from src.models.linear_integration.ms_net import MSNet as MSNetOriginal
+from src.models.linear_integration.blocks import MSBasicBlock as MSBasicBlockOriginal
 
 SEED = 42
 
@@ -22,8 +22,8 @@ SEED = 42
 def create_models():
     """Create both models with identical seeds."""
     torch.manual_seed(SEED)
-    model_orig = LINetOriginal(
-        block=LIBasicBlockOriginal,
+    model_orig = MSNetOriginal(
+        block=MSBasicBlockOriginal,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream1_input_channels=3,
@@ -32,24 +32,24 @@ def create_models():
     ).to('cpu')
 
     torch.manual_seed(SEED)
-    model_linet = LINet(
-        block=LIBasicBlock3,
+    model_msnet = MSNet(
+        block=MSBasicBlock3,
         layers=[2, 2, 2, 2],
         num_classes=10,
         stream_input_channels=[3, 1],
         device='cpu'
     ).to('cpu')
 
-    return model_orig, model_linet
+    return model_orig, model_msnet
 
 
 def test_conv_parameter_ordering():
-    """Test parameter ordering in LIConv2d layers."""
+    """Test parameter ordering in MSConv2d layers."""
     print("=" * 80)
-    print("Test: LIConv2d Parameter Ordering")
+    print("Test: MSConv2d Parameter Ordering")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     # Check conv1 parameters
     print("\n--- Original Model conv1 Parameters ---")
@@ -57,19 +57,19 @@ def test_conv_parameter_ordering():
     for name, param in orig_params:
         print(f"  {name}: {param.shape}")
 
-    print("\n--- LINet Model conv1 Parameters ---")
-    li3_params = list(model_linet.conv1.named_parameters())
-    for name, param in li3_params:
+    print("\n--- MSNet Model conv1 Parameters ---")
+    ms_params = list(model_msnet.conv1.named_parameters())
+    for name, param in ms_params:
         print(f"  {name}: {param.shape}")
 
     # Analyze ordering
     print("\n--- Parameter Ordering Analysis ---")
 
     orig_names = [n for n, _ in orig_params]
-    li3_names = [n for n, _ in li3_params]
+    ms_names = [n for n, _ in ms_params]
 
     print(f"\nOriginal order: {orig_names}")
-    print(f"LINet order:   {li3_names}")
+    print(f"MSNet order:   {ms_names}")
 
     # Check if Original follows stream1 -> stream2 -> integrated
     print("\n--- Expected Order Check ---")
@@ -89,33 +89,33 @@ def test_conv_parameter_ordering():
             break
     print(f"\nOriginal model first stream in order: {orig_first_stream}")
 
-    # Check LINet
-    li3_first_stream = None
-    for name in li3_names:
+    # Check MSNet
+    ms_first_stream = None
+    for name in ms_names:
         if 'stream_weights.0' in name or 'stream0' in name:
-            li3_first_stream = 'stream0'
+            ms_first_stream = 'stream0'
             break
         elif 'stream_weights.1' in name or 'stream1' in name:
-            li3_first_stream = 'stream1'
+            ms_first_stream = 'stream1'
             break
         elif 'integrated' in name:
-            li3_first_stream = 'integrated'
+            ms_first_stream = 'integrated'
             break
-    print(f"LINet model first stream in order: {li3_first_stream}")
+    print(f"MSNet model first stream in order: {ms_first_stream}")
 
-    if orig_first_stream == 'stream1' and li3_first_stream == 'integrated':
-        print("\n⚠️  ORDERING MISMATCH: Original starts with stream1, LINet starts with integrated!")
-    elif orig_first_stream == li3_first_stream:
+    if orig_first_stream == 'stream1' and ms_first_stream == 'integrated':
+        print("\n⚠️  ORDERING MISMATCH: Original starts with stream1, MSNet starts with integrated!")
+    elif orig_first_stream == ms_first_stream:
         print("\n✅ Ordering matches!")
 
 
 def test_bn_parameter_ordering():
-    """Test parameter ordering in LIBatchNorm2d layers."""
+    """Test parameter ordering in MSBatchNorm2d layers."""
     print("\n" + "=" * 80)
-    print("Test: LIBatchNorm2d Parameter Ordering")
+    print("Test: MSBatchNorm2d Parameter Ordering")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     # Check bn1 parameters
     print("\n--- Original Model bn1 Parameters ---")
@@ -123,28 +123,28 @@ def test_bn_parameter_ordering():
     for name, param in orig_params:
         print(f"  {name}: {param.shape}")
 
-    print("\n--- LINet Model bn1 Parameters ---")
-    li3_params = list(model_linet.bn1.named_parameters())
-    for name, param in li3_params:
+    print("\n--- MSNet Model bn1 Parameters ---")
+    ms_params = list(model_msnet.bn1.named_parameters())
+    for name, param in ms_params:
         print(f"  {name}: {param.shape}")
 
     # Analyze ordering
     print("\n--- Parameter Ordering Analysis ---")
 
     orig_names = [n for n, _ in orig_params]
-    li3_names = [n for n, _ in li3_params]
+    ms_names = [n for n, _ in ms_params]
 
     print(f"\nOriginal order: {orig_names}")
-    print(f"LINet order:   {li3_names}")
+    print(f"MSNet order:   {ms_names}")
 
 
 def test_bn_buffer_ordering():
-    """Test buffer ordering in LIBatchNorm2d layers."""
+    """Test buffer ordering in MSBatchNorm2d layers."""
     print("\n" + "=" * 80)
-    print("Test: LIBatchNorm2d Buffer Ordering")
+    print("Test: MSBatchNorm2d Buffer Ordering")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     # Check bn1 buffers
     print("\n--- Original Model bn1 Buffers ---")
@@ -152,19 +152,19 @@ def test_bn_buffer_ordering():
     for name, buf in orig_buffers:
         print(f"  {name}: {buf.shape if hasattr(buf, 'shape') else buf}")
 
-    print("\n--- LINet Model bn1 Buffers ---")
-    li3_buffers = list(model_linet.bn1.named_buffers())
-    for name, buf in li3_buffers:
+    print("\n--- MSNet Model bn1 Buffers ---")
+    ms_buffers = list(model_msnet.bn1.named_buffers())
+    for name, buf in ms_buffers:
         print(f"  {name}: {buf.shape if hasattr(buf, 'shape') else buf}")
 
     # Analyze ordering
     print("\n--- Buffer Ordering Analysis ---")
 
     orig_names = [n for n, _ in orig_buffers]
-    li3_names = [n for n, _ in li3_buffers]
+    ms_names = [n for n, _ in ms_buffers]
 
     print(f"\nOriginal order: {orig_names}")
-    print(f"LINet order:   {li3_names}")
+    print(f"MSNet order:   {ms_names}")
 
 
 def test_parameter_value_correspondence():
@@ -173,28 +173,28 @@ def test_parameter_value_correspondence():
     print("Test: Parameter Value Correspondence")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     # Compare conv1 weights
     print("\n--- conv1 Weight Comparison ---")
 
     # Original: stream1_weight, stream2_weight, integrated_weight
-    # LINet: stream_weights[0], stream_weights[1], integrated_weight
+    # MSNet: stream_weights[0], stream_weights[1], integrated_weight
 
     orig_s1_weight = model_orig.conv1.stream1_weight
     orig_s2_weight = model_orig.conv1.stream2_weight
     orig_int_weight = model_orig.conv1.integrated_weight
 
-    li3_s0_weight = model_linet.conv1.stream_weights[0]
-    li3_s1_weight = model_linet.conv1.stream_weights[1]
-    li3_int_weight = model_linet.conv1.integrated_weight
+    ms_s0_weight = model_msnet.conv1.stream_weights[0]
+    ms_s1_weight = model_msnet.conv1.stream_weights[1]
+    ms_int_weight = model_msnet.conv1.integrated_weight
 
     print(f"Original stream1_weight shape: {orig_s1_weight.shape}")
-    print(f"LINet stream_weights[0] shape: {li3_s0_weight.shape}")
-    print(f"  Shapes match: {orig_s1_weight.shape == li3_s0_weight.shape}")
+    print(f"MSNet stream_weights[0] shape: {ms_s0_weight.shape}")
+    print(f"  Shapes match: {orig_s1_weight.shape == ms_s0_weight.shape}")
 
-    if orig_s1_weight.shape == li3_s0_weight.shape:
-        diff = (orig_s1_weight - li3_s0_weight).abs().max().item()
+    if orig_s1_weight.shape == ms_s0_weight.shape:
+        diff = (orig_s1_weight - ms_s0_weight).abs().max().item()
         print(f"  Max diff: {diff:.2e}")
         if diff < 1e-6:
             print(f"  ✅ Values match!")
@@ -202,11 +202,11 @@ def test_parameter_value_correspondence():
             print(f"  ⚠️  Values differ!")
 
     print(f"\nOriginal stream2_weight shape: {orig_s2_weight.shape}")
-    print(f"LINet stream_weights[1] shape: {li3_s1_weight.shape}")
-    print(f"  Shapes match: {orig_s2_weight.shape == li3_s1_weight.shape}")
+    print(f"MSNet stream_weights[1] shape: {ms_s1_weight.shape}")
+    print(f"  Shapes match: {orig_s2_weight.shape == ms_s1_weight.shape}")
 
-    if orig_s2_weight.shape == li3_s1_weight.shape:
-        diff = (orig_s2_weight - li3_s1_weight).abs().max().item()
+    if orig_s2_weight.shape == ms_s1_weight.shape:
+        diff = (orig_s2_weight - ms_s1_weight).abs().max().item()
         print(f"  Max diff: {diff:.2e}")
         if diff < 1e-6:
             print(f"  ✅ Values match!")
@@ -214,12 +214,12 @@ def test_parameter_value_correspondence():
             print(f"  ⚠️  Values differ!")
 
     print(f"\nOriginal integrated_weight shape: {orig_int_weight.shape}")
-    print(f"LINet integrated_weight shape: {li3_int_weight.shape}")
-    print(f"  Shapes match: {orig_int_weight.shape == li3_int_weight.shape}")
+    print(f"MSNet integrated_weight shape: {ms_int_weight.shape}")
+    print(f"  Shapes match: {orig_int_weight.shape == ms_int_weight.shape}")
 
-    if orig_int_weight.shape == li3_int_weight.shape:
+    if orig_int_weight.shape == ms_int_weight.shape:
         if orig_int_weight.numel() > 0:
-            diff = (orig_int_weight - li3_int_weight).abs().max().item()
+            diff = (orig_int_weight - ms_int_weight).abs().max().item()
             print(f"  Max diff: {diff:.2e}")
         else:
             print(f"  (Empty tensor - first layer has no integrated input)")
@@ -231,16 +231,16 @@ def test_integration_weights():
     print("Test: Integration Weight Naming")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     # Original integration weights
     print("\n--- Original Integration Weights ---")
     print(f"integration_from_stream1: {model_orig.conv1.integration_from_stream1.shape}")
     print(f"integration_from_stream2: {model_orig.conv1.integration_from_stream2.shape}")
 
-    # LINet integration weights
-    print("\n--- LINet Integration Weights ---")
-    for i, w in enumerate(model_linet.conv1.integration_from_streams):
+    # MSNet integration weights
+    print("\n--- MSNet Integration Weights ---")
+    for i, w in enumerate(model_msnet.conv1.integration_from_streams):
         print(f"integration_from_streams[{i}]: {w.shape}")
 
 
@@ -250,10 +250,10 @@ def test_state_dict_key_mapping():
     print("Test: State Dict Key Mapping")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
 
     orig_state = model_orig.state_dict()
-    li3_state = model_linet.state_dict()
+    ms_state = model_msnet.state_dict()
 
     # Find conv1 keys
     print("\n--- Original conv1 State Dict Keys ---")
@@ -261,10 +261,10 @@ def test_state_dict_key_mapping():
     for k in orig_conv1_keys:
         print(f"  {k}: {orig_state[k].shape}")
 
-    print("\n--- LINet conv1 State Dict Keys ---")
-    li3_conv1_keys = sorted([k for k in li3_state.keys() if k.startswith('conv1.')])
-    for k in li3_conv1_keys:
-        print(f"  {k}: {li3_state[k].shape}")
+    print("\n--- MSNet conv1 State Dict Keys ---")
+    ms_conv1_keys = sorted([k for k in ms_state.keys() if k.startswith('conv1.')])
+    for k in ms_conv1_keys:
+        print(f"  {k}: {ms_state[k].shape}")
 
     # Build mapping
     print("\n--- Key Mapping ---")
@@ -279,14 +279,14 @@ def test_state_dict_key_mapping():
         'conv1.integration_from_stream2': 'conv1.integration_from_streams.1',
     }
 
-    for orig_key, li3_key in mapping.items():
+    for orig_key, ms_key in mapping.items():
         orig_shape = orig_state.get(orig_key, {})
-        li3_shape = li3_state.get(li3_key, {})
+        ms_shape = ms_state.get(ms_key, {})
         orig_shape_str = str(orig_shape.shape) if hasattr(orig_shape, 'shape') else 'NOT FOUND'
-        li3_shape_str = str(li3_shape.shape) if hasattr(li3_shape, 'shape') else 'NOT FOUND'
-        match = '✅' if orig_shape_str == li3_shape_str else '❌'
-        print(f"  {match} {orig_key} -> {li3_key}")
-        print(f"      Original: {orig_shape_str}, LINet: {li3_shape_str}")
+        ms_shape_str = str(ms_shape.shape) if hasattr(ms_shape, 'shape') else 'NOT FOUND'
+        match = '✅' if orig_shape_str == ms_shape_str else '❌'
+        print(f"  {match} {orig_key} -> {ms_key}")
+        print(f"      Original: {orig_shape_str}, MSNet: {ms_shape_str}")
 
 
 def test_forward_pass_outputs():
@@ -295,9 +295,9 @@ def test_forward_pass_outputs():
     print("Test: Forward Pass Output Comparison")
     print("=" * 80)
 
-    model_orig, model_linet = create_models()
+    model_orig, model_msnet = create_models()
     model_orig.eval()
-    model_linet.eval()
+    model_msnet.eval()
 
     torch.manual_seed(SEED)
     rgb = torch.randn(2, 3, 32, 32)
@@ -305,9 +305,9 @@ def test_forward_pass_outputs():
 
     with torch.no_grad():
         out_orig = model_orig(rgb, depth)
-        out_li3 = model_linet([rgb, depth])
+        out_ms = model_msnet([rgb, depth])
 
-    diff = (out_orig - out_li3).abs().max().item()
+    diff = (out_orig - out_ms).abs().max().item()
     print(f"\nOutput difference: {diff:.6f}")
 
     if diff < 1e-5:
@@ -321,7 +321,7 @@ def test_forward_pass_outputs():
         # conv1
         with torch.no_grad():
             s1_orig, s2_orig, int_orig = model_orig.conv1(rgb, depth, None)
-            s_li3, int_li3 = model_linet.conv1([rgb, depth], None)
+            s_li3, int_li3 = model_msnet.conv1([rgb, depth], None)
 
         diff_s1 = (s1_orig - s_li3[0]).abs().max().item()
         diff_s2 = (s2_orig - s_li3[1]).abs().max().item()
@@ -352,7 +352,7 @@ Key Findings:
 
 1. PARAMETER NAMING CONVENTION:
    - Original: stream1_*, stream2_*, integrated_* (explicit stream naming)
-   - LINet: stream_weights[i], stream_biases[i], integrated_* (indexed ParameterList)
+   - MSNet: stream_weights[i], stream_biases[i], integrated_* (indexed ParameterList)
 
 2. EXPECTED ORDERING (per user):
    - stream1, stream2, ..., integrated
@@ -360,7 +360,7 @@ Key Findings:
 3. ACTUAL ORDERING:
    - Original: stream1_weight, stream2_weight, integrated_weight,
                integration_from_stream1, integration_from_stream2
-   - LINet: Check if ParameterList maintains order or if integrated comes first
+   - MSNet: Check if ParameterList maintains order or if integrated comes first
 
 4. IMPLICATIONS:
    - PyTorch ParameterList is ordered, but the state_dict key format differs

@@ -1,5 +1,5 @@
 """
-Gradient monitoring utilities for Linear Integration Neural Networks (LINet).
+Gradient monitoring utilities for Linear Integration Neural Networks (MSNet).
 
 This module provides lightweight gradient analysis tools for N-stream architectures
 to detect pathway collapse or gradient imbalance between streams.
@@ -47,7 +47,7 @@ class GradientMonitor:
         Initialize gradient monitor.
 
         Args:
-            model: The LINet model to monitor
+            model: The MSNet model to monitor
         """
         self.model = model
         # Get num_streams directly from model if available, otherwise detect
@@ -349,7 +349,7 @@ class GradientMonitor:
 
 class GradientLogger:
     """
-    Accumulate gradient statistics over multiple training steps for LINet.
+    Accumulate gradient statistics over multiple training steps for MSNet.
     """
 
     def __init__(self, model: nn.Module):
@@ -357,7 +357,7 @@ class GradientLogger:
         Initialize gradient logger.
 
         Args:
-            model: The LINet model to monitor
+            model: The MSNet model to monitor
         """
         self.monitor = GradientMonitor(model)
         self.history = []
@@ -424,7 +424,7 @@ class GradientLogger:
         ax1.plot(steps, integrated_norms, label='Integrated', marker=markers[num_streams % len(markers)])
         ax1.set_xlabel('Training Step')
         ax1.set_ylabel('Gradient Norm')
-        ax1.set_title('Gradient Magnitudes by Stream (LINet)')
+        ax1.set_title('Gradient Magnitudes by Stream (MSNet)')
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
@@ -443,7 +443,7 @@ class GradientLogger:
         ax2.axhline(y=0.2, color='red', linestyle='--', alpha=0.3)
         ax2.set_xlabel('Training Step')
         ax2.set_ylabel('Ratio (log scale)')
-        ax2.set_title('Pathway Balance Ratios (LINet)')
+        ax2.set_title('Pathway Balance Ratios (MSNet)')
         ax2.legend()
         ax2.grid(True, alpha=0.3)
         ax2.set_yscale('log')
@@ -495,7 +495,7 @@ class GradientHealthTracker:
         Initialize gradient health tracker.
 
         Args:
-            model: The LINet model to monitor
+            model: The MSNet model to monitor
             window_size: Sliding window size for oscillation detection (default: 20)
             vanishing_threshold: Per-stream norm below this is vanishing (default: 1e-7)
             exploding_threshold: Per-stream norm above this is exploding (default: 100.0)

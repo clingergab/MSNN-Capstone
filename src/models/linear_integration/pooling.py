@@ -12,12 +12,12 @@ from torch.nn import Module
 
 
 __all__ = [
-    "LIMaxPool2d",
-    "LIAdaptiveAvgPool2d",
+    "MSMaxPool2d",
+    "MSAdaptiveAvgPool2d",
 ]
 
 
-class _LIMaxPoolNd(Module):
+class _MSMaxPoolNd(Module):
     """
     Linear Integration MaxPool base class - follows PyTorch's _MaxPoolNd pattern exactly.
 
@@ -60,7 +60,7 @@ class _LIMaxPoolNd(Module):
         )
 
 
-class LIMaxPool2d(_LIMaxPoolNd):
+class MSMaxPool2d(_MSMaxPoolNd):
     r"""Linear Integration 2D max pooling - follows PyTorch's MaxPool2d pattern exactly.
 
     Applies a 2D max pooling over N input signals (stream inputs and integrated stream)
@@ -117,7 +117,7 @@ class LIMaxPool2d(_LIMaxPoolNd):
     Examples::
 
         >>> # pool of square window of size=3, stride=2 for 3 streams
-        >>> m = LIMaxPool2d(3, stride=2)
+        >>> m = MSMaxPool2d(3, stride=2)
         >>> stream_inputs = [
         ...     torch.randn(20, 16, 50, 32),  # stream 0
         ...     torch.randn(20, 8, 50, 32),   # stream 1
@@ -197,7 +197,7 @@ class LIMaxPool2d(_LIMaxPoolNd):
         )
 
 
-class _LIAdaptiveAvgPoolNd(Module):
+class _MSAdaptiveAvgPoolNd(Module):
     """
     Linear Integration Adaptive Average Pool base class - follows PyTorch's _AdaptiveAvgPoolNd pattern exactly.
 
@@ -215,7 +215,7 @@ class _LIAdaptiveAvgPoolNd(Module):
         return f"output_size={self.output_size}"
 
 
-class LIAdaptiveAvgPool2d(_LIAdaptiveAvgPoolNd):
+class MSAdaptiveAvgPool2d(_MSAdaptiveAvgPoolNd):
     r"""Linear Integration 2D adaptive average pooling - follows PyTorch's AdaptiveAvgPool2d pattern exactly.
 
     Applies a 2D adaptive average pooling over N input signals (stream inputs and integrated stream)
@@ -238,11 +238,11 @@ class LIAdaptiveAvgPool2d(_LIAdaptiveAvgPoolNd):
     Examples::
 
         >>> # target output size of 5x7 for 3 streams
-        >>> m = LIAdaptiveAvgPool2d((5, 7))
+        >>> m = MSAdaptiveAvgPool2d((5, 7))
         >>> stream_inputs = [torch.randn(1, 64, 8, 9) for _ in range(3)]
         >>> stream_outputs, _ = m(stream_inputs, None)
         >>> # target output size of 7x7 (square)
-        >>> m = LIAdaptiveAvgPool2d(7)
+        >>> m = MSAdaptiveAvgPool2d(7)
         >>> stream_inputs = [torch.randn(1, 64, 10, 9) for _ in range(3)]
         >>> integrated_input = torch.randn(1, 64, 10, 9)
         >>> stream_outputs, integrated_output = m(stream_inputs, integrated_input)

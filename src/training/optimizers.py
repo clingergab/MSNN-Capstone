@@ -24,7 +24,7 @@ def create_stream_optimizer(
     Create optimizer with stream-specific learning rates for N-stream models.
 
     This is a convenience function that combines parameter group creation and optimizer
-    instantiation in one step. It's designed for multi-stream models (MCResNet, LINet)
+    instantiation in one step. It's designed for multi-stream models (MCResNet, MSNet)
     where different streams benefit from different learning rates.
 
     Args:
@@ -48,11 +48,11 @@ def create_stream_optimizer(
         torch.optim.Optimizer with parameter groups
 
     Example:
-        >>> from src.models.linear_integration import li_resnet50
+        >>> from src.models.linear_integration import ms_resnet50
         >>> from src.training.optimizers import create_stream_optimizer
         >>> from src.training.schedulers import setup_scheduler
         >>>
-        >>> model = li_resnet50(num_classes=19, num_streams=3)
+        >>> model = ms_resnet50(num_classes=19, num_streams=3)
         >>>
         >>> # Option 1: Same LR for all streams
         >>> optimizer = create_stream_optimizer(model, optimizer_type='adamw', stream_lrs=1e-3)
@@ -87,7 +87,7 @@ def create_stream_optimizer(
     if not hasattr(model, 'get_stream_parameter_groups'):
         raise AttributeError(
             f"Model {type(model).__name__} does not have get_stream_parameter_groups() method. "
-            "This function only works with multi-stream models (MCResNet, LINet)."
+            "This function only works with multi-stream models (MCResNet, MSNet)."
         )
 
     # Set defaults if not provided
