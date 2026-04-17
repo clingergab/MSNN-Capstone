@@ -618,7 +618,10 @@ def create_progress_bar(verbose: bool, epoch: int, epochs: int, total_steps: int
 def finalize_progress_bar(pbar, avg_train_loss: float, train_accuracy: float,
                         val_loader, val_loss: float, val_acc: float,
                         early_stopping_state: dict[str, Any], current_lr: float,
-                        extra_postfix: Optional[dict[str, str]] = None) -> None:
+                        extra_postfix: Optional[dict[str, str]] = None,
+                        train_mca: Optional[float] = None,
+                        val_mca: Optional[float] = None,
+                        monitor: Optional[str] = None) -> None:
     """
     Update and close progress bar with final epoch metrics.
 
@@ -632,29 +635,37 @@ def finalize_progress_bar(pbar, avg_train_loss: float, train_accuracy: float,
         early_stopping_state: Early stopping state dictionary
         current_lr: Current learning rate
         extra_postfix: Optional extra key-value pairs to include (e.g., grad norm)
+        train_mca: Optional training mean class accuracy to display
+        val_mca: Optional validation mean class accuracy to display
+        monitor: Optional name of the monitored metric; used to label the `best` field
     """
     if pbar is None:
         return
-        
+
     final_postfix = {
         'train_loss': f'{avg_train_loss:.4f}',
         'train_acc': f'{train_accuracy:.4f}'
     }
-    
+    if train_mca is not None:
+        final_postfix['train_mca'] = f'{train_mca:.4f}'
+
     if val_loader:
         final_postfix.update({
             'val_loss': f'{val_loss:.4f}',
             'val_acc': f'{val_acc:.4f}'
         })
-    
+        if val_mca is not None:
+            final_postfix['val_mca'] = f'{val_mca:.4f}'
+
     # Add early stopping info to progress bar
     if early_stopping_state['enabled'] and val_loader is not None:
+        best_key = f'best_{monitor}' if monitor else 'best'
         if early_stopping_state['patience_counter'] > early_stopping_state['patience']:
             final_postfix['early_stop'] = 'TRIGGERED'
         elif early_stopping_state['patience_counter'] > 0:
             final_postfix['patience'] = f"{early_stopping_state['patience_counter']}/{early_stopping_state['patience']}"
         else:
-            final_postfix['best'] = f"{early_stopping_state['best_metric']:.4f}"
+            final_postfix[best_key] = f"{early_stopping_state['best_metric']:.4f}"
     
     # Add extra postfix entries (e.g., gradient norm)
     if extra_postfix:
