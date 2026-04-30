@@ -1341,6 +1341,26 @@ class MSNet(BaseModel):
                 'train_loss': best_train_loss
             }
 
+        # Restore best weights at end of training when early stopping was enabled
+        # but never triggered. The ES-fire branch above already restored at break
+        # time, and the all-streams-frozen branch restored from the stream ES
+        # checkpoint — both gate this path off via the conditions below.
+        if (restore_best_weights
+                and early_stopping_state['enabled']
+                and val_loader is not None
+                and early_stopping_state.get('best_weights') is not None
+                and early_stopping_state['patience_counter'] <= early_stopping_state['patience']
+                and not stream_early_stopping_state.get('all_frozen', False)):
+            self._restore_checkpoint(
+                early_stopping_state['best_weights'],
+                verbose=False,
+                stream_early_stopping_state=stream_early_stopping_state,
+            )
+            if verbose:
+                print(f"🔄 Training completed without early stopping triggering. "
+                      f"Restored best weights from epoch {early_stopping_state['best_epoch'] + 1} "
+                      f"({monitor}={early_stopping_state['best_metric']:.4f}).")
+
         # Final early stopping summary
         if early_stopping_state['enabled'] and val_loader is not None:
             stopped_early = early_stopping_state['patience_counter'] > early_stopping_state['patience']
