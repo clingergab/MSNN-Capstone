@@ -8,6 +8,8 @@ for misclassification analysis and sample comparison.
 All visualizers are N-stream compatible (no hardcoded stream names).
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,6 +18,7 @@ import matplotlib.pyplot as plt
 from typing import Optional, Union
 from collections import OrderedDict
 from torch.utils.data import DataLoader
+from torchvision.utils import make_grid
 
 
 # ---------------------------------------------------------------------------
@@ -944,6 +947,40 @@ class IntegrationWeightVisualizer:
         self.model = model
         self.num_streams = model.num_streams
         self.labels = _default_stream_labels(self.num_streams, stream_labels)
+
+    def visualize_conv1_filters(self, save_path: Optional[str] = None) -> None:
+        """Plot first-layer (conv1) learned filters per stream.
+
+        Reads `model.conv1.stream_weights[i]` for each stream. Filters with 1
+        input channel are tiled to RGB for display; filters with >=3 input
+        channels are shown using their first 3 channels.
+        """
+        conv1 = getattr(self.model, "conv1", None)
+        stream_weights = getattr(conv1, "stream_weights", None)
+        if stream_weights is None:
+            print("Model has no conv1.stream_weights — skipping conv1 filter visualization.")
+            return
+
+        n_streams = len(stream_weights)
+        fig, axes = plt.subplots(n_streams, 1, figsize=(7, 7 * n_streams), squeeze=False)
+        for si in range(n_streams):
+            w = stream_weights[si].detach().cpu()
+            in_ch = w.shape[1]
+            if in_ch == 1:
+                w_disp = w.repeat(1, 3, 1, 1)
+            elif in_ch >= 3:
+                w_disp = w[:, :3]
+            else:
+                w_disp = w[:, :1].repeat(1, 3, 1, 1)
+            nrow = int(math.ceil(math.sqrt(w_disp.shape[0])))
+            grid = make_grid(w_disp, nrow=nrow, normalize=True, scale_each=True, pad_value=1)
+            ax = axes[si, 0]
+            ax.imshow(grid.permute(1, 2, 0).numpy())
+            ax.axis("off")
+            ax.set_title(f"{self.labels.get(si, f'Stream {si}')} conv1 filters", fontsize=10)
+
+        plt.tight_layout()
+        _save_or_show(fig, save_path)
 
     def visualize_weights(self, save_path: Optional[str] = None) -> None:
         """Plot integration weights as heatmaps per layer and stream."""
